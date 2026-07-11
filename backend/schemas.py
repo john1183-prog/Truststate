@@ -67,6 +67,7 @@ class PropertyRead(PropertyBase):
     agent_id: int
     is_verified: bool
     status: PropertyStatusEnum
+    views: int = 0
     created_at: datetime
     agent: UserRead
     images: List[PropertyImageRead] = []

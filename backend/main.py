@@ -91,13 +91,32 @@ async def create_property(property_in: schemas.PropertyCreate, db: AsyncSession 
 
 @app.get("/properties/", response_model=List[schemas.PropertyRead])
 async def get_approved_properties(db: AsyncSession = Depends(database.get_db)):
-    """Returns only approved properties for public viewing."""
+    """Returns only approved properties for public viewing, newest first."""
     result = await db.execute(
         select(models.Property)
         .where(models.Property.status == models.PropertyStatusEnum.approved)
+        .order_by(models.Property.created_at.desc())
         .options(selectinload(models.Property.images), selectinload(models.Property.agent))
     )
     return result.scalars().all()
+
+@app.get("/properties/{property_id}", response_model=schemas.PropertyRead)
+async def get_property(property_id: int, db: AsyncSession = Depends(database.get_db)):
+    """Returns a single approved property by id and increments its view counter."""
+    result = await db.execute(
+        select(models.Property)
+        .where(models.Property.id == property_id)
+        .where(models.Property.status == models.PropertyStatusEnum.approved)
+        .options(selectinload(models.Property.images), selectinload(models.Property.agent))
+    )
+    db_property = result.scalar_one_or_none()
+    if not db_property:
+        raise HTTPException(status_code=404, detail="Property not found")
+    # Increment view counter
+    db_property.views = (db_property.views or 0) + 1
+    await db.commit()
+    await db.refresh(db_property)
+    return db_property
 
 @app.get("/admin/properties/", response_model=List[schemas.PropertyRead])
 async def get_all_properties(db: AsyncSession = Depends(database.get_db)):

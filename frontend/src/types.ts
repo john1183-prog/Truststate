@@ -62,6 +62,7 @@ export interface PropertyRead {
   agent_id: number;
   is_verified: boolean;
   status: PropertyStatusEnum;
+  views: number;
   created_at: string;
   agent: UserRead;
   images: PropertyImageRead[];

@@ -1,48 +1,79 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
-import { PropertyRead, PropertyTypeEnum } from '../types';
+import { PropertyRead, PropertyTypeEnum, PropertyFilters } from '../types';
 import { PropertyCard } from '../components/PropertyCard';
+import { FilterBar } from '../components/FilterBar';
 import { Search, Sparkles, CheckCircle, Clock } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const [properties, setProperties] = useState<PropertyRead[]>([]);
+  const [recentlyAdded, setRecentlyAdded] = useState<PropertyRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterType, setFilterType] = useState<PropertyTypeEnum | 'all'>('all');
-  const [searchNeighborhood, setSearchNeighborhood] = useState('');
+
+  // Hero search inputs (kept separate from filters so typing doesn't spam requests until debounced)
+  const [neighborhoodInput, setNeighborhoodInput] = useState('');
+  const [typeInput, setTypeInput] = useState<PropertyTypeEnum | ''>('');
+
+  // Everything else — price, bedrooms, verified, sort — lives here, fetched server-side
+  const [filters, setFilters] = useState<PropertyFilters>({ sort: 'newest' });
+
+  // Debounce neighborhood text input so we don't fire a request on every keystroke
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setFilters((prev) => ({ ...prev, neighborhood: neighborhoodInput || undefined }));
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [neighborhoodInput]);
 
   useEffect(() => {
-    const fetchProperties = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get<PropertyRead[]>('/properties/');
-        setProperties(response.data);
-        setError(null);
-      } catch {
-        setError('Failed to load properties. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
-    };
+    setFilters((prev) => ({ ...prev, property_type: typeInput || undefined }));
+  }, [typeInput]);
+
+  const fetchProperties = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params: Record<string, string | number | boolean> = {};
+      if (filters.neighborhood) params.neighborhood = filters.neighborhood;
+      if (filters.property_type) params.property_type = filters.property_type;
+      if (filters.min_price !== undefined) params.min_price = filters.min_price;
+      if (filters.max_price !== undefined) params.max_price = filters.max_price;
+      if (filters.bedrooms !== undefined) params.bedrooms = filters.bedrooms;
+      if (filters.verified_only) params.verified_only = true;
+      if (filters.sort) params.sort = filters.sort;
+
+      const response = await api.get<PropertyRead[]>('/properties/', { params });
+      setProperties(response.data);
+      setError(null);
+    } catch {
+      setError('Failed to load properties. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => {
     fetchProperties();
+  }, [fetchProperties]);
+
+  // Recently added — fetched once, unfiltered, newest-first (independent of the user's active filters)
+  useEffect(() => {
+    api.get<PropertyRead[]>('/properties/', { params: { sort: 'newest' } })
+      .then((res) => setRecentlyAdded(res.data.slice(0, 3)))
+      .catch(() => { /* non-critical section, fail silently */ });
   }, []);
 
-  const filteredProperties = properties.filter((p) => {
-    const matchType = filterType === 'all' || p.property_type === filterType;
-    const matchNeighborhood = p.neighborhood.toLowerCase().includes(searchNeighborhood.toLowerCase());
-    return matchType && matchNeighborhood;
-  });
-
-  // 3 most recent — backend already returns newest-first
-  const recentlyAdded = properties.slice(0, 3);
+  const hasActiveFilters =
+    !!filters.neighborhood || !!filters.property_type ||
+    filters.min_price !== undefined || filters.max_price !== undefined ||
+    filters.bedrooms !== undefined || filters.verified_only;
 
   return (
     <div className="min-h-screen bg-[#F8F6F1]">
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <section className="bg-[#0A0A0A] text-white pt-16 pb-20 px-4 relative overflow-hidden">
-        {/* Gold accent line */}
         <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#C9A84C]" />
 
         <div className="max-w-6xl mx-auto text-center">
@@ -67,23 +98,26 @@ export const HomePage: React.FC = () => {
                 type="text"
                 placeholder="Search by neighbourhood — Lekki, Ikoyi, Yaba…"
                 className="w-full pl-11 pr-4 py-3 rounded-xl text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
-                value={searchNeighborhood}
-                onChange={(e) => setSearchNeighborhood(e.target.value)}
+                value={neighborhoodInput}
+                onChange={(e) => setNeighborhoodInput(e.target.value)}
               />
             </div>
 
             <select
               className="px-4 py-3 rounded-xl text-gray-900 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A84C] md:w-44 border border-gray-100"
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as PropertyTypeEnum | 'all')}
+              value={typeInput}
+              onChange={(e) => setTypeInput(e.target.value as PropertyTypeEnum | '')}
             >
-              <option value="all">All Types</option>
+              <option value="">All Types</option>
               <option value="rent">For Rent</option>
               <option value="sale">For Sale</option>
               <option value="short_let">Short Let</option>
             </select>
 
-            <button className="bg-[#C9A84C] hover:bg-[#b8963e] text-black font-black px-8 py-3 rounded-xl transition-colors text-sm">
+            <button
+              onClick={fetchProperties}
+              className="bg-[#C9A84C] hover:bg-[#b8963e] text-black font-black px-8 py-3 rounded-xl transition-colors text-sm"
+            >
               Search
             </button>
           </div>
@@ -109,8 +143,8 @@ export const HomePage: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 py-14 space-y-16">
 
-        {/* ── Recently Added ────────────────────────────────────────────── */}
-        {!loading && recentlyAdded.length > 0 && (
+        {/* ── Recently Added — only shown when no filters are active ─────── */}
+        {!hasActiveFilters && recentlyAdded.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
@@ -128,20 +162,24 @@ export const HomePage: React.FC = () => {
         )}
 
         {/* ── All Verified Listings ─────────────────────────────────────── */}
-        <section>
-          <div className="flex items-center justify-between mb-6">
+        <section className="space-y-5">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles size={20} className="text-[#C9A84C]" />
               <div>
-                <h2 className="text-xl font-black text-[#0A0A0A]">Verified Properties</h2>
+                <h2 className="text-xl font-black text-[#0A0A0A]">
+                  {hasActiveFilters ? 'Search Results' : 'Verified Properties'}
+                </h2>
                 {!loading && (
                   <p className="text-gray-400 text-sm mt-0.5">
-                    {filteredProperties.length} {filteredProperties.length === 1 ? 'property' : 'properties'} found
+                    {properties.length} {properties.length === 1 ? 'property' : 'properties'} found
                   </p>
                 )}
               </div>
             </div>
           </div>
+
+          <FilterBar filters={filters} onChange={setFilters} />
 
           {loading ? (
             <div className="flex justify-center items-center py-20">
@@ -149,15 +187,15 @@ export const HomePage: React.FC = () => {
             </div>
           ) : error ? (
             <div className="bg-red-50 text-red-600 p-5 rounded-xl text-center text-sm">{error}</div>
-          ) : filteredProperties.length === 0 ? (
+          ) : properties.length === 0 ? (
             <div className="bg-white p-12 rounded-2xl text-center border border-gray-100 shadow-sm">
               <Search size={40} className="text-gray-300 mx-auto mb-3" />
               <h3 className="text-lg font-bold text-gray-900 mb-2">No properties found</h3>
-              <p className="text-gray-400 text-sm">Try a different neighbourhood or property type.</p>
+              <p className="text-gray-400 text-sm">Try a different neighbourhood, price range, or property type.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredProperties.map((p) => (
+              {properties.map((p) => (
                 <PropertyCard key={p.id} property={p} />
               ))}
             </div>

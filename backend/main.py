@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 import os
 
 import models
@@ -90,14 +90,44 @@ async def create_property(property_in: schemas.PropertyCreate, db: AsyncSession 
     return result.scalar_one()
 
 @app.get("/properties/", response_model=List[schemas.PropertyRead])
-async def get_approved_properties(db: AsyncSession = Depends(database.get_db)):
-    """Returns only approved properties for public viewing, newest first."""
-    result = await db.execute(
-        select(models.Property)
-        .where(models.Property.status == models.PropertyStatusEnum.approved)
-        .order_by(models.Property.created_at.desc())
-        .options(selectinload(models.Property.images), selectinload(models.Property.agent))
-    )
+async def get_approved_properties(
+    db: AsyncSession = Depends(database.get_db),
+    neighborhood: Optional[str] = Query(None, description="Case-insensitive partial match"),
+    property_type: Optional[schemas.PropertyTypeEnum] = Query(None),
+    min_price: Optional[int] = Query(None, ge=0),
+    max_price: Optional[int] = Query(None, ge=0),
+    bedrooms: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
+    bathrooms: Optional[int] = Query(None, ge=0, description="Minimum number of bathrooms"),
+    verified_only: bool = Query(False),
+    sort: str = Query("newest", pattern="^(newest|price_asc|price_desc)$"),
+):
+    """Returns approved properties for public viewing, filtered and sorted server-side."""
+    query = select(models.Property).where(models.Property.status == models.PropertyStatusEnum.approved)
+
+    if neighborhood:
+        query = query.where(models.Property.neighborhood.ilike(f"%{neighborhood}%"))
+    if property_type:
+        query = query.where(models.Property.property_type == property_type)
+    if min_price is not None:
+        query = query.where(models.Property.price >= min_price)
+    if max_price is not None:
+        query = query.where(models.Property.price <= max_price)
+    if bedrooms is not None:
+        query = query.where(models.Property.bedrooms >= bedrooms)
+    if bathrooms is not None:
+        query = query.where(models.Property.bathrooms >= bathrooms)
+    if verified_only:
+        query = query.where(models.Property.is_verified == True)
+
+    if sort == "price_asc":
+        query = query.order_by(models.Property.price.asc())
+    elif sort == "price_desc":
+        query = query.order_by(models.Property.price.desc())
+    else:
+        query = query.order_by(models.Property.created_at.desc())
+
+    query = query.options(selectinload(models.Property.images), selectinload(models.Property.agent))
+    result = await db.execute(query)
     return result.scalars().all()
 
 @app.get("/properties/{property_id}", response_model=schemas.PropertyRead)

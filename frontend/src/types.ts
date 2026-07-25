@@ -67,3 +67,17 @@ export interface PropertyRead {
   agent: UserRead;
   images: PropertyImageRead[];
 }
+
+// --- Search / Filter Types ---
+export type SortOption = 'newest' | 'price_asc' | 'price_desc';
+
+export interface PropertyFilters {
+  neighborhood?: string;
+  property_type?: PropertyTypeEnum | '';
+  min_price?: number;
+  max_price?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+  verified_only?: boolean;
+  sort?: SortOption;
+}

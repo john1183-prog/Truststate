@@ -14,6 +14,7 @@ export enum PropertyTypeEnum {
 export enum PropertyStatusEnum {
   pending = 'pending',
   approved = 'approved',
+  rejected = 'rejected',
   taken = 'taken',
 }
 
@@ -25,7 +26,13 @@ export interface UserRead {
   role: RoleEnum;
   id: number;
   is_verified: boolean;
+  is_active: boolean;
   created_at: string;
+}
+
+export interface UserUpdate {
+  is_verified?: boolean;
+  is_active?: boolean;
 }
 
 // --- Property Image Types ---
@@ -66,6 +73,19 @@ export interface PropertyRead {
   created_at: string;
   agent: UserRead;
   images: PropertyImageRead[];
+}
+
+export interface PropertyUpdate {
+  title?: string;
+  description?: string;
+  price?: number;
+  property_type?: PropertyTypeEnum;
+  bedrooms?: number;
+  bathrooms?: number;
+  neighborhood?: string;
+  address?: string;
+  status?: PropertyStatusEnum;
+  is_verified?: boolean;
 }
 
 // --- Search / Filter Types ---

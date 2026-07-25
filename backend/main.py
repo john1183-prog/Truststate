@@ -62,6 +62,19 @@ async def create_user(user_in: schemas.UserCreate, db: AsyncSession = Depends(da
     await db.refresh(new_user)
     return new_user
 
+@app.get("/users/", response_model=List[schemas.UserRead])
+async def list_users(
+    role: Optional[schemas.RoleEnum] = Query(None),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: lists users, optionally filtered by role (e.g. agents)."""
+    query = select(models.User)
+    if role:
+        query = query.where(models.User.role == role)
+    query = query.order_by(models.User.created_at.desc())
+    result = await db.execute(query)
+    return result.scalars().all()
+
 @app.get("/users/{user_id}", response_model=schemas.UserRead)
 async def get_user(user_id: int, db: AsyncSession = Depends(database.get_db)):
     """Fetches a single user by id."""
@@ -69,6 +82,25 @@ async def get_user(user_id: int, db: AsyncSession = Depends(database.get_db)):
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+@app.patch("/users/{user_id}", response_model=schemas.UserRead)
+async def update_user(
+    user_id: int,
+    user_in: schemas.UserUpdate,
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: verify or suspend/reactivate a user (e.g. an agent)."""
+    result = await db.execute(select(models.User).where(models.User.id == user_id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    update_data = user_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_user, field, value)
+    await db.commit()
+    await db.refresh(db_user)
     return db_user
 
 # --- Properties Routes ---
@@ -149,12 +181,17 @@ async def get_property(property_id: int, db: AsyncSession = Depends(database.get
     return db_property
 
 @app.get("/admin/properties/", response_model=List[schemas.PropertyRead])
-async def get_all_properties(db: AsyncSession = Depends(database.get_db)):
-    """Admin route: returns all properties regardless of status."""
-    result = await db.execute(
-        select(models.Property)
-        .options(selectinload(models.Property.images), selectinload(models.Property.agent))
-    )
+async def get_all_properties(
+    status_filter: Optional[schemas.PropertyStatusEnum] = Query(None, alias="status"),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: returns all properties, optionally filtered by status."""
+    query = select(models.Property)
+    if status_filter:
+        query = query.where(models.Property.status == status_filter)
+    query = query.order_by(models.Property.created_at.desc())
+    query = query.options(selectinload(models.Property.images), selectinload(models.Property.agent))
+    result = await db.execute(query)
     return result.scalars().all()
 
 @app.patch("/properties/{property_id}", response_model=schemas.PropertyRead)
@@ -181,6 +218,16 @@ async def update_property(
         .options(selectinload(models.Property.images), selectinload(models.Property.agent))
     )
     return result.scalar_one()
+
+@app.delete("/properties/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_property(property_id: int, db: AsyncSession = Depends(database.get_db)):
+    """Admin route: permanently deletes a property (images cascade automatically)."""
+    result = await db.execute(select(models.Property).where(models.Property.id == property_id))
+    db_property = result.scalar_one_or_none()
+    if not db_property:
+        raise HTTPException(status_code=404, detail="Property not found")
+    await db.delete(db_property)
+    await db.commit()
 
 @app.post("/properties/{property_id}/images", response_model=schemas.PropertyImageRead, status_code=status.HTTP_201_CREATED)
 async def upload_property_image(

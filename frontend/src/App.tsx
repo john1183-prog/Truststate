@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { AgentDashboard } from './pages/AgentDashboard';
 import { PropertyDetailPage } from './pages/PropertyDetailPage';
+import { AdminDashboard } from './pages/AdminDashboard';
 
 export const App: React.FC = () => {
   return (
@@ -39,6 +40,7 @@ export const App: React.FC = () => {
             <Route path="/" element={<HomePage />} />
             <Route path="/agent" element={<AgentDashboard />} />
             <Route path="/property/:id" element={<PropertyDetailPage />} />
+            <Route path="/admin" element={<AdminDashboard />} />
           </Routes>
         </main>
 
@@ -46,6 +48,8 @@ export const App: React.FC = () => {
         <footer className="bg-[#0A0A0A] text-white/40 text-xs text-center py-6 px-4">
           © {new Date().getFullYear()} TrustEstate — Verified property discovery for Nigeria.
           Always verify agent identity before making any payments.
+          {' · '}
+          <Link to="/admin" className="hover:text-white/70 transition-colors">Admin</Link>
         </footer>
       </div>
     </BrowserRouter>

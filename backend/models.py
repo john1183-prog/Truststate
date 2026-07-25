@@ -17,6 +17,7 @@ class PropertyTypeEnum(str, enum.Enum):
 class PropertyStatusEnum(str, enum.Enum):
     pending = "pending"
     approved = "approved"
+    rejected = "rejected"
     taken = "taken"
 
 class User(Base):
@@ -28,6 +29,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     phone = Column(String, nullable=False)
     is_verified = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     properties = relationship("Property", back_populates="agent")

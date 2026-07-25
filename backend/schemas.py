@@ -13,9 +13,14 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     pass
 
+class UserUpdate(BaseModel):
+    is_verified: Optional[bool] = None
+    is_active: Optional[bool] = None
+
 class UserRead(UserBase):
     id: int
     is_verified: bool
+    is_active: bool = True
     created_at: datetime
 
     class Config:

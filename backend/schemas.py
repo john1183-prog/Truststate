@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
 from datetime import datetime
-from models import RoleEnum, PropertyTypeEnum, PropertyStatusEnum
+from models import RoleEnum, PropertyTypeEnum, PropertyStatusEnum, InspectionStatusEnum
 
 # --- User Schemas ---
 class UserBase(BaseModel):
@@ -76,6 +76,41 @@ class PropertyRead(PropertyBase):
     created_at: datetime
     agent: UserRead
     images: List[PropertyImageRead] = []
+
+    class Config:
+        from_attributes = True
+
+# Lightweight summary used inside InspectionRequestRead — avoids re-fetching
+# the whole property (with its images/agent) just to show which listing an
+# enquiry is about.
+class PropertySummary(BaseModel):
+    id: int
+    title: str
+    neighborhood: str
+
+    class Config:
+        from_attributes = True
+
+# --- Inspection Request Schemas ("Schedule a View" / Enquiries) ---
+class InspectionRequestBase(BaseModel):
+    name: str
+    phone: str
+    email: Optional[str] = None
+    preferred_date: str
+    message: Optional[str] = None
+
+class InspectionRequestCreate(InspectionRequestBase):
+    pass
+
+class InspectionRequestUpdate(BaseModel):
+    status: InspectionStatusEnum
+
+class InspectionRequestRead(InspectionRequestBase):
+    id: int
+    property_id: int
+    status: InspectionStatusEnum
+    created_at: datetime
+    property: PropertySummary
 
     class Config:
         from_attributes = True

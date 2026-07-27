@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
-import { PropertyRead, PropertyStatusEnum, UserRead, RoleEnum } from '../types';
+import { PropertyRead, PropertyStatusEnum, UserRead, RoleEnum, InspectionRequestRead, InspectionStatusEnum } from '../types';
 import {
   ClipboardList, Users, CheckCircle, XCircle, ShieldCheck,
-  Trash2, Home, AlertCircle, Ban, RotateCcw,
+  Trash2, Home, AlertCircle, Ban, RotateCcw, CalendarCheck, Phone,
 } from 'lucide-react';
 
 type ListingFilter = 'all' | PropertyStatusEnum;
@@ -15,6 +15,13 @@ const STATUS_STYLES: Record<string, string> = {
   taken: 'bg-gray-200 text-gray-600',
 };
 
+const INSPECTION_STATUS_STYLES: Record<string, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  confirmed: 'bg-emerald-100 text-emerald-800',
+  completed: 'bg-blue-100 text-blue-700',
+  cancelled: 'bg-red-100 text-red-700',
+};
+
 const FILTER_TABS: { label: string; value: ListingFilter }[] = [
   { label: 'All', value: 'all' },
   { label: 'Pending', value: PropertyStatusEnum.pending },
@@ -24,7 +31,7 @@ const FILTER_TABS: { label: string; value: ListingFilter }[] = [
 ];
 
 export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'listings' | 'agents'>('listings');
+  const [activeTab, setActiveTab] = useState<'listings' | 'agents' | 'enquiries'>('listings');
 
   return (
     <div className="min-h-screen bg-[#F8F6F1] flex flex-col md:flex-row">
@@ -53,12 +60,23 @@ export const AdminDashboard: React.FC = () => {
             <Users size={18} />
             Agents
           </button>
+          <button
+            onClick={() => setActiveTab('enquiries')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors ${
+              activeTab === 'enquiries' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
+            }`}
+          >
+            <CalendarCheck size={18} />
+            Enquiries
+          </button>
         </nav>
       </aside>
 
       {/* Main content */}
       <main className="flex-1 p-5 md:p-8 overflow-x-hidden">
-        {activeTab === 'listings' ? <ListingsPanel /> : <AgentsPanel />}
+        {activeTab === 'listings' && <ListingsPanel />}
+        {activeTab === 'agents' && <AgentsPanel />}
+        {activeTab === 'enquiries' && <EnquiriesPanel />}
       </main>
     </div>
   );
@@ -350,6 +368,153 @@ const AgentsPanel: React.FC = () => {
                       className="flex items-center gap-1.5 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-2 rounded-lg disabled:opacity-50"
                     >
                       <RotateCcw size={14} /> Reactivate
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Enquiries Panel ("Schedule a View" requests) ──────────────────────────
+
+type EnquiryFilter = 'all' | InspectionStatusEnum;
+
+const ENQUIRY_FILTER_TABS: { label: string; value: EnquiryFilter }[] = [
+  { label: 'All', value: 'all' },
+  { label: 'Pending', value: InspectionStatusEnum.pending },
+  { label: 'Confirmed', value: InspectionStatusEnum.confirmed },
+  { label: 'Completed', value: InspectionStatusEnum.completed },
+  { label: 'Cancelled', value: InspectionStatusEnum.cancelled },
+];
+
+const EnquiriesPanel: React.FC = () => {
+  const [requests, setRequests] = useState<InspectionRequestRead[]>([]);
+  const [filter, setFilter] = useState<EnquiryFilter>('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actioningId, setActioningId] = useState<number | null>(null);
+
+  const fetchRequests = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = filter === 'all' ? {} : { status: filter };
+      const res = await api.get<InspectionRequestRead[]>('/admin/inspections/', { params });
+      setRequests(res.data);
+      setError(null);
+    } catch {
+      setError('Failed to load enquiries.');
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  useEffect(() => { fetchRequests(); }, [fetchRequests]);
+
+  const updateStatus = async (id: number, newStatus: InspectionStatusEnum) => {
+    setActioningId(id);
+    try {
+      await api.patch(`/inspections/${id}`, { status: newStatus });
+      await fetchRequests();
+    } catch {
+      setError('Action failed. Please try again.');
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto">
+      <h1 className="text-2xl font-black text-[#0A0A0A] mb-1">Enquiries</h1>
+      <p className="text-gray-500 text-sm mb-6">"Schedule a view" requests submitted by seekers.</p>
+
+      <div className="flex flex-wrap gap-2 mb-6">
+        {ENQUIRY_FILTER_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setFilter(tab.value)}
+            className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
+              filter === tab.value
+                ? 'bg-[#0A0A0A] text-white'
+                : 'bg-white text-gray-500 border border-gray-200 hover:border-[#C9A84C]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#C9A84C]" />
+        </div>
+      ) : requests.length === 0 ? (
+        <div className="bg-white p-12 rounded-2xl text-center border border-gray-100">
+          <CalendarCheck size={40} className="text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500">No enquiries in this category.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((r) => {
+            const busy = actioningId === r.id;
+            return (
+              <div key={r.id} className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-[#0A0A0A]">{r.name}</p>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${INSPECTION_STATUS_STYLES[r.status]}`}>
+                      {r.status}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Re: <span className="font-medium text-gray-700">{r.property.title}</span> ({r.property.neighborhood})
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-sm text-gray-400">
+                    <span className="flex items-center gap-1"><Phone size={13} /> {r.phone}</span>
+                    <span className="flex items-center gap-1"><CalendarCheck size={13} /> {r.preferred_date}</span>
+                  </div>
+                  {r.message && (
+                    <p className="text-sm text-gray-500 mt-2 bg-gray-50 rounded-lg px-3 py-2 italic">"{r.message}"</p>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {r.status === 'pending' && (
+                    <>
+                      <button
+                        disabled={busy}
+                        onClick={() => updateStatus(r.id, InspectionStatusEnum.confirmed)}
+                        className="flex items-center gap-1.5 text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg disabled:opacity-50"
+                      >
+                        <CheckCircle size={14} /> Confirm
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => updateStatus(r.id, InspectionStatusEnum.cancelled)}
+                        className="flex items-center gap-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg disabled:opacity-50"
+                      >
+                        <XCircle size={14} /> Cancel
+                      </button>
+                    </>
+                  )}
+                  {r.status === 'confirmed' && (
+                    <button
+                      disabled={busy}
+                      onClick={() => updateStatus(r.id, InspectionStatusEnum.completed)}
+                      className="text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg disabled:opacity-50"
+                    >
+                      Mark Completed
                     </button>
                   )}
                 </div>

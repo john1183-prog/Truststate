@@ -20,6 +20,12 @@ class PropertyStatusEnum(str, enum.Enum):
     rejected = "rejected"
     taken = "taken"
 
+class InspectionStatusEnum(str, enum.Enum):
+    pending = "pending"
+    confirmed = "confirmed"
+    completed = "completed"
+    cancelled = "cancelled"
+
 class User(Base):
     __tablename__ = "users"
 
@@ -54,6 +60,7 @@ class Property(Base):
 
     agent = relationship("User", back_populates="properties")
     images = relationship("PropertyImage", back_populates="property", cascade="all, delete-orphan")
+    inspection_requests = relationship("InspectionRequest", back_populates="property", cascade="all, delete-orphan")
 
 class PropertyImage(Base):
     __tablename__ = "property_images"
@@ -64,3 +71,18 @@ class PropertyImage(Base):
     is_main = Column(Boolean, default=False)
 
     property = relationship("Property", back_populates="images")
+
+class InspectionRequest(Base):
+    __tablename__ = "inspection_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    preferred_date = Column(String, nullable=False)  # free-text date/time the seeker proposes
+    message = Column(String, nullable=True)
+    status = Column(Enum(InspectionStatusEnum), default=InspectionStatusEnum.pending)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    property = relationship("Property", back_populates="inspection_requests")

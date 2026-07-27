@@ -18,6 +18,13 @@ export enum PropertyStatusEnum {
   taken = 'taken',
 }
 
+export enum InspectionStatusEnum {
+  pending = 'pending',
+  confirmed = 'confirmed',
+  completed = 'completed',
+  cancelled = 'cancelled',
+}
+
 // --- User Types ---
 export interface UserRead {
   name: string;
@@ -100,4 +107,32 @@ export interface PropertyFilters {
   bathrooms?: number;
   verified_only?: boolean;
   sort?: SortOption;
+}
+
+// --- Inspection Request Types ("Schedule a View" / Enquiries) ---
+export interface PropertySummary {
+  id: number;
+  title: string;
+  neighborhood: string;
+}
+
+export interface InspectionRequestCreate {
+  name: string;
+  phone: string;
+  email?: string;
+  preferred_date: string;
+  message?: string;
+}
+
+export interface InspectionRequestRead {
+  name: string;
+  phone: string;
+  email?: string;
+  preferred_date: string;
+  message?: string;
+  id: number;
+  property_id: number;
+  status: InspectionStatusEnum;
+  created_at: string;
+  property: PropertySummary;
 }

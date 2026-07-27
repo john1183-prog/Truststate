@@ -3,9 +3,11 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../api';
 import { PropertyRead } from '../types';
 import { useSavedProperties } from '../hooks/useSavedProperties';
+import { ScheduleViewModal } from '../components/ScheduleViewModal';
+import { PropertyCard } from '../components/PropertyCard';
 import {
   CheckCircle, MapPin, Bed, Bath, ChevronLeft, ChevronRight,
-  Heart, Phone, Eye, ArrowLeft, Shield, Calendar,
+  Heart, Phone, Eye, ArrowLeft, Shield, Calendar, CalendarCheck,
 } from 'lucide-react';
 
 // ── Design tokens ────────────────────────────────────────────────────────────
@@ -40,6 +42,8 @@ export const PropertyDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentImg, setCurrentImg] = useState(0);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [similarProperties, setSimilarProperties] = useState<PropertyRead[]>([]);
   const { isSaved, toggleSave } = useSavedProperties();
 
   useEffect(() => {
@@ -57,6 +61,14 @@ export const PropertyDetailPage: React.FC = () => {
     };
     fetch();
   }, [id]);
+
+  // Similar properties: same neighborhood, excluding the current listing
+  useEffect(() => {
+    if (!property) return;
+    api.get<PropertyRead[]>('/properties/', { params: { neighborhood: property.neighborhood } })
+      .then((res) => setSimilarProperties(res.data.filter((p) => p.id !== property.id).slice(0, 3)))
+      .catch(() => { /* non-critical section, fail silently */ });
+  }, [property]);
 
   if (loading) {
     return (
@@ -297,6 +309,15 @@ export const PropertyDetailPage: React.FC = () => {
                 <p className="text-center text-white/40 text-sm py-2">No contact details available</p>
               )}
 
+              {/* Schedule a view */}
+              <button
+                onClick={() => setShowScheduleModal(true)}
+                className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl font-bold border-2 border-[#C9A84C] text-[#C9A84C] hover:bg-[#C9A84C] hover:text-black transition-colors"
+              >
+                <CalendarCheck size={19} />
+                Schedule a View
+              </button>
+
               {/* Save */}
               <button
                 onClick={() => toggleSave(property.id)}
@@ -317,7 +338,29 @@ export const PropertyDetailPage: React.FC = () => {
           </div>
 
         </div>
+
+        {/* ── Similar Properties ─────────────────────────────────────── */}
+        {similarProperties.length > 0 && (
+          <div className="mt-14">
+            <h2 className="text-xl font-black text-[#0A0A0A] mb-6">
+              Similar Properties in {property.neighborhood}
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {similarProperties.map((p) => (
+                <PropertyCard key={p.id} property={p} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {showScheduleModal && (
+        <ScheduleViewModal
+          propertyId={property.id}
+          propertyTitle={property.title}
+          onClose={() => setShowScheduleModal(false)}
+        />
+      )}
     </div>
   );
 };

@@ -257,3 +257,74 @@ async def upload_property_image(
     await db.commit()
     await db.refresh(new_image)
     return new_image
+
+# --- Inspection Request Routes ("Schedule a View" / Enquiries) ---
+
+@app.post(
+    "/properties/{property_id}/inspections",
+    response_model=schemas.InspectionRequestRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_inspection_request(
+    property_id: int,
+    request_in: schemas.InspectionRequestCreate,
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Public route: a seeker requests to schedule a view of an approved property."""
+    result = await db.execute(
+        select(models.Property)
+        .where(models.Property.id == property_id)
+        .where(models.Property.status == models.PropertyStatusEnum.approved)
+    )
+    db_property = result.scalar_one_or_none()
+    if not db_property:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    new_request = models.InspectionRequest(property_id=property_id, **request_in.model_dump())
+    db.add(new_request)
+    await db.commit()
+
+    result = await db.execute(
+        select(models.InspectionRequest)
+        .where(models.InspectionRequest.id == new_request.id)
+        .options(selectinload(models.InspectionRequest.property))
+    )
+    return result.scalar_one()
+
+@app.get("/admin/inspections/", response_model=List[schemas.InspectionRequestRead])
+async def list_inspection_requests(
+    status_filter: Optional[schemas.InspectionStatusEnum] = Query(None, alias="status"),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: lists all schedule-a-view requests, optionally filtered by status."""
+    query = select(models.InspectionRequest)
+    if status_filter:
+        query = query.where(models.InspectionRequest.status == status_filter)
+    query = query.order_by(models.InspectionRequest.created_at.desc())
+    query = query.options(selectinload(models.InspectionRequest.property))
+    result = await db.execute(query)
+    return result.scalars().all()
+
+@app.patch("/inspections/{inspection_id}", response_model=schemas.InspectionRequestRead)
+async def update_inspection_request(
+    inspection_id: int,
+    request_in: schemas.InspectionRequestUpdate,
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: confirm, complete, or cancel a schedule-a-view request."""
+    result = await db.execute(
+        select(models.InspectionRequest).where(models.InspectionRequest.id == inspection_id)
+    )
+    db_request = result.scalar_one_or_none()
+    if not db_request:
+        raise HTTPException(status_code=404, detail="Inspection request not found")
+
+    db_request.status = request_in.status
+    await db.commit()
+
+    result = await db.execute(
+        select(models.InspectionRequest)
+        .where(models.InspectionRequest.id == inspection_id)
+        .options(selectinload(models.InspectionRequest.property))
+    )
+    return result.scalar_one()

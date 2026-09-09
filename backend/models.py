@@ -8,6 +8,7 @@ class RoleEnum(str, enum.Enum):
     seeker = "seeker"
     agent = "agent"
     admin = "admin"
+    lawyer = "lawyer"
 
 class PropertyTypeEnum(str, enum.Enum):
     rent = "rent"
@@ -26,6 +27,12 @@ class InspectionStatusEnum(str, enum.Enum):
     completed = "completed"
     cancelled = "cancelled"
 
+class LegalRequestStatusEnum(str, enum.Enum):
+    pending = "pending"
+    contacted = "contacted"
+    completed = "completed"
+    cancelled = "cancelled"
+
 class User(Base):
     __tablename__ = "users"
 
@@ -38,7 +45,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # Lawyer profile fields
+    specializations = Column(String, nullable=True)  # Comma-separated tags
+    bio = Column(String, nullable=True)
+    years_of_experience = Column(Integer, nullable=True)
+
     properties = relationship("Property", back_populates="agent")
+    legal_requests = relationship("LegalRequest", back_populates="lawyer", foreign_keys="LegalRequest.lawyer_id")
 
 class Property(Base):
     __tablename__ = "properties"
@@ -86,3 +99,18 @@ class InspectionRequest(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     property = relationship("Property", back_populates="inspection_requests")
+
+class LegalRequest(Base):
+    __tablename__ = "legal_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    service_type = Column(String, nullable=False)
+    message = Column(String, nullable=True)
+    lawyer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(Enum(LegalRequestStatusEnum), default=LegalRequestStatusEnum.pending)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    lawyer = relationship("User", back_populates="legal_requests", foreign_keys=[lawyer_id])

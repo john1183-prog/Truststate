@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
-import { PropertyRead, PropertyStatusEnum, UserRead, RoleEnum, InspectionRequestRead, InspectionStatusEnum } from '../types';
+import {
+  PropertyRead, PropertyStatusEnum, UserRead, RoleEnum,
+  InspectionRequestRead, InspectionStatusEnum,
+  LegalRequestRead, LegalRequestStatusEnum,
+} from '../types';
 import { PropertyFormModal } from '../components/PropertyFormModal';
 import {
   ClipboardList, Users, CheckCircle, XCircle, ShieldCheck,
-  Trash2, Home, AlertCircle, Ban, RotateCcw, CalendarCheck, Phone, Plus, Pencil,
+  Trash2, Home, AlertCircle, Ban, RotateCcw, CalendarCheck, Phone, Plus, Pencil, Scale,
 } from 'lucide-react';
 
 type ListingFilter = 'all' | PropertyStatusEnum;
@@ -23,6 +27,13 @@ const INSPECTION_STATUS_STYLES: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 };
 
+const LEGAL_STATUS_STYLES: Record<string, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  contacted: 'bg-purple-100 text-purple-800',
+  completed: 'bg-emerald-100 text-emerald-800',
+  cancelled: 'bg-red-100 text-red-700',
+};
+
 const FILTER_TABS: { label: string; value: ListingFilter }[] = [
   { label: 'All', value: 'all' },
   { label: 'Pending', value: PropertyStatusEnum.pending },
@@ -32,7 +43,7 @@ const FILTER_TABS: { label: string; value: ListingFilter }[] = [
 ];
 
 export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'listings' | 'agents' | 'enquiries'>('listings');
+  const [activeTab, setActiveTab] = useState<'listings' | 'agents' | 'enquiries' | 'legal_requests'>('listings');
 
   return (
     <div className="min-h-screen bg-[#F8F6F1] flex flex-col md:flex-row">
@@ -42,10 +53,10 @@ export const AdminDashboard: React.FC = () => {
           <h2 className="text-lg font-black text-white">Admin Console</h2>
           <p className="text-xs text-white/40 mt-0.5">Trust Estate</p>
         </div>
-        <nav className="flex md:flex-col p-3 gap-1">
+        <nav className="flex md:flex-col p-3 gap-1 overflow-x-auto md:overflow-visible">
           <button
             onClick={() => setActiveTab('listings')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
               activeTab === 'listings' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
             }`}
           >
@@ -54,7 +65,7 @@ export const AdminDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('agents')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
               activeTab === 'agents' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
             }`}
           >
@@ -63,12 +74,21 @@ export const AdminDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('enquiries')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
               activeTab === 'enquiries' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
             }`}
           >
             <CalendarCheck size={18} />
             Enquiries
+          </button>
+          <button
+            onClick={() => setActiveTab('legal_requests')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
+              activeTab === 'legal_requests' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
+            }`}
+          >
+            <Scale size={18} />
+            Legal Requests
           </button>
         </nav>
       </aside>
@@ -78,6 +98,7 @@ export const AdminDashboard: React.FC = () => {
         {activeTab === 'listings' && <ListingsPanel />}
         {activeTab === 'agents' && <AgentsPanel />}
         {activeTab === 'enquiries' && <EnquiriesPanel />}
+        {activeTab === 'legal_requests' && <LegalRequestsPanel />}
       </main>
     </div>
   );
@@ -554,6 +575,209 @@ const EnquiriesPanel: React.FC = () => {
                       className="text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg disabled:opacity-50"
                     >
                       Mark Completed
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Legal Requests Panel ──────────────────────────────────────────────────
+
+type LegalFilter = 'all' | LegalRequestStatusEnum;
+
+const LEGAL_FILTER_TABS: { label: string; value: LegalFilter }[] = [
+  { label: 'All', value: 'all' },
+  { label: 'Pending', value: LegalRequestStatusEnum.pending },
+  { label: 'Contacted', value: LegalRequestStatusEnum.contacted },
+  { label: 'Completed', value: LegalRequestStatusEnum.completed },
+  { label: 'Cancelled', value: LegalRequestStatusEnum.cancelled },
+];
+
+const LegalRequestsPanel: React.FC = () => {
+  const [requests, setRequests] = useState<LegalRequestRead[]>([]);
+  const [filter, setFilter] = useState<LegalFilter>('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actioningId, setActioningId] = useState<number | null>(null);
+
+  const fetchRequests = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = filter === 'all' ? {} : { status: filter };
+      const res = await api.get<LegalRequestRead[]>('/admin/legal-requests/', { params });
+      setRequests(res.data);
+      setError(null);
+    } catch {
+      setError('Failed to load legal requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
+
+  const updateStatus = async (id: number, newStatus: LegalRequestStatusEnum) => {
+    setActioningId(id);
+    try {
+      await api.patch(`/admin/legal-requests/${id}`, { status: newStatus });
+      await fetchRequests();
+    } catch {
+      setError('Action failed. Please try again.');
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto">
+      <h1 className="text-2xl font-black text-[#0A0A0A] mb-1">Legal Requests</h1>
+      <p className="text-gray-500 text-sm mb-6">
+        Title verification, contract drafting, and due diligence leads submitted by seekers.
+      </p>
+
+      {/* Filter Tabs */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        {LEGAL_FILTER_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setFilter(tab.value)}
+            className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
+              filter === tab.value
+                ? 'bg-[#0A0A0A] text-white'
+                : 'bg-white text-gray-500 border border-gray-200 hover:border-[#C9A84C]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#C9A84C]" />
+        </div>
+      ) : requests.length === 0 ? (
+        <div className="bg-white p-12 rounded-2xl text-center border border-gray-100">
+          <Scale size={40} className="text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500">No legal service requests in this category.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((r) => {
+            const busy = actioningId === r.id;
+            return (
+              <div
+                key={r.id}
+                className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 shadow-xs"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <p className="font-bold text-[#0A0A0A]">{r.name}</p>
+                    <span
+                      className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize ${
+                        LEGAL_STATUS_STYLES[r.status] || 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                    <span className="text-xs font-semibold bg-[#C9A84C]/15 text-black px-2.5 py-0.5 rounded-md">
+                      {r.service_type}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-gray-600 mt-0.5">
+                    Targeted Counsel:{' '}
+                    <span className="font-medium text-[#0A0A0A]">
+                      {r.lawyer ? r.lawyer.name : 'General Legal Pool'}
+                    </span>
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <Phone size={13} className="text-[#C9A84C]" /> {r.phone}
+                    </span>
+                    {r.email && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-gray-400 font-bold">@</span> {r.email}
+                      </span>
+                    )}
+                    <span className="text-gray-400">
+                      {new Date(r.created_at).toLocaleDateString('en-NG', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </span>
+                  </div>
+
+                  {r.message && (
+                    <p className="text-xs text-gray-600 mt-2.5 bg-gray-50 rounded-lg px-3 py-2 italic border border-gray-100">
+                      "{r.message}"
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                  {r.status === 'pending' && (
+                    <>
+                      <button
+                        disabled={busy}
+                        onClick={() => updateStatus(r.id, LegalRequestStatusEnum.contacted)}
+                        className="flex items-center gap-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <CheckCircle size={14} /> Mark Contacted
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => updateStatus(r.id, LegalRequestStatusEnum.cancelled)}
+                        className="flex items-center gap-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <XCircle size={14} /> Cancel
+                      </button>
+                    </>
+                  )}
+
+                  {r.status === 'contacted' && (
+                    <>
+                      <button
+                        disabled={busy}
+                        onClick={() => updateStatus(r.id, LegalRequestStatusEnum.completed)}
+                        className="flex items-center gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <CheckCircle size={14} /> Mark Completed
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => updateStatus(r.id, LegalRequestStatusEnum.cancelled)}
+                        className="flex items-center gap-1.5 text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <XCircle size={14} /> Cancel
+                      </button>
+                    </>
+                  )}
+
+                  {(r.status === 'completed' || r.status === 'cancelled') && (
+                    <button
+                      disabled={busy}
+                      onClick={() => updateStatus(r.id, LegalRequestStatusEnum.pending)}
+                      className="text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      Reopen
                     </button>
                   )}
                 </div>

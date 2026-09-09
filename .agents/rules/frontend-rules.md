@@ -1,0 +1,56 @@
+---
+trigger:
+  glob: "frontend/**"
+description: Rules and conventions for frontend React, Vite, TypeScript, and Tailwind work in Trust Estate.
+---
+
+# Trust Estate Frontend Rules
+
+Apply to all React, Vite, TypeScript, and Tailwind CSS development in `frontend/`.
+
+## 1. Stack & Architecture
+- **Tech Stack**:
+  - React 18.2 + Vite 5.2 + TypeScript 5.2
+  - Tailwind CSS 3.4
+  - React Router 6.22
+  - Axios 1.6
+  - Lucide React icons
+- **Constraint**: Do not upgrade React to v19 or Tailwind to v4 during feature work. Do not add Redux, Zustand, or other state libraries for local feature tasks.
+
+## 2. API & Network Communication
+- **Centralized Client**: All API requests MUST use the centralized client in `frontend/src/api.ts`.
+- **Environment Configuration**: API base URL is resolved via `import.meta.env.VITE_API_URL || 'http://localhost:8000'`.
+- Never hardcode backend URLs inside individual components.
+- Keep TypeScript types in `frontend/src/types.ts` strictly synchronized with backend Pydantic schemas in `backend/schemas.py`.
+
+## 3. Visual System & Component Reuse
+- **Brand Colors**:
+  - Primary Background / Dark Elements: `#0A0A0A`
+  - Accent / Gold: `#C9A84C` (Hover: `#b8963e` or similar gold tone)
+  - Text: High contrast white/off-white (`text-white`, `text-white/70`, `text-white/40`) on dark backgrounds.
+- **Component Patterns**:
+  - Reuse and follow existing patterns:
+    - Entity cards: Follow `frontend/src/components/PropertyCard.tsx`.
+    - Form modals: Follow `frontend/src/components/PropertyFormModal.tsx` and `ScheduleViewModal.tsx`.
+    - Filters: Follow `frontend/src/components/FilterBar.tsx`.
+    - Dashboards: Follow the tabbed layout structure in `frontend/src/pages/AdminDashboard.tsx`.
+- Keep cards, borders, rounded corners, and spacing visually consistent across new pages.
+
+## 4. Responsive & Mobile-First Behavior
+- Trust Estate is a mobile-first product for Nigerian users.
+- Prevent horizontal scrollbars (`overflow-x-hidden` or fluid layout).
+- Ensure buttons, inputs, and touch targets are comfortable on small screens (minimum 44px height recommended).
+- Modals must be scrollable on small screens and fit within viewport bounds.
+
+## 5. UX & State Discipline
+- Every data-fetching component must account for 4 distinct UX states:
+  1. **Loading state**: Clear skeleton or loading indicator (never leave screen frozen).
+  2. **Success state**: Clean data presentation.
+  3. **Empty state**: Friendly prompt when no records exist.
+  4. **Error state**: Actionable error message with retry or contact option if network/server fails.
+- Never leave users on an uninformative blank screen.
+
+## 6. Build & Verification Gate
+- After any frontend edit, run `npm run build` from `frontend/`.
+- TypeScript compiler (`tsc`) must pass with 0 errors.
+- For new pages or modal flows, start the Vite dev server and verify visually in the browser.

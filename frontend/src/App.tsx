@@ -4,6 +4,7 @@ import { HomePage } from './pages/HomePage';
 import { AgentDashboard } from './pages/AgentDashboard';
 import { PropertyDetailPage } from './pages/PropertyDetailPage';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { LegalServicesPage } from './pages/LegalServicesPage';
 
 export const App: React.FC = () => {
   return (
@@ -18,12 +19,18 @@ export const App: React.FC = () => {
             </Link>
 
             {/* Nav links */}
-            <nav className="flex items-center gap-3">
+            <nav className="flex items-center gap-3 sm:gap-4">
               <Link
                 to="/"
                 className="text-sm font-medium text-white/70 hover:text-white transition-colors hidden sm:block"
               >
                 Browse
+              </Link>
+              <Link
+                to="/legal"
+                className="text-sm font-medium text-white/70 hover:text-[#C9A84C] transition-colors"
+              >
+                Legal Services
               </Link>
               <Link
                 to="/agent"
@@ -38,6 +45,7 @@ export const App: React.FC = () => {
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/legal" element={<LegalServicesPage />} />
             <Route path="/agent" element={<AgentDashboard />} />
             <Route path="/property/:id" element={<PropertyDetailPage />} />
             <Route path="/admin" element={<AdminDashboard />} />
@@ -48,6 +56,8 @@ export const App: React.FC = () => {
         <footer className="bg-[#0A0A0A] text-white/40 text-xs text-center py-6 px-4">
           © {new Date().getFullYear()} TrustEstate — Verified property discovery for Nigeria.
           Always verify agent identity before making any payments.
+          {' · '}
+          <Link to="/legal" className="hover:text-white/70 transition-colors">Legal Services</Link>
           {' · '}
           <Link to="/admin" className="hover:text-white/70 transition-colors">Admin</Link>
         </footer>

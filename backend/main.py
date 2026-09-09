@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -15,7 +16,26 @@ import cloudinary_utils
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with database.engine.begin() as conn:
-        # Create tables on startup (for MVP purposes)
+        # Idempotent PostgreSQL schema patch for Legal Services:
+        # - This exists because Base.metadata.create_all() does not alter existing tables or enums.
+        # - It safely upgrades deployed databases (e.g. Neon) that already contain the users table.
+        # - It is temporary/minimal MVP migration infrastructure; a proper migration framework
+        #   (such as Alembic) can be introduced later when schema complexity warrants it.
+        # - Handled safely with IF EXISTS so it executes cleanly on both existing and fresh databases.
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'roleenum') THEN
+                    ALTER TYPE roleenum ADD VALUE IF NOT EXISTS 'lawyer';
+                END IF;
+            END
+            $$;
+        """))
+        await conn.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS specializations VARCHAR;"))
+        await conn.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS bio VARCHAR;"))
+        await conn.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS years_of_experience INTEGER;"))
+
+        # Create new tables (e.g. legal_requests) on startup (for MVP purposes)
         await conn.run_sync(models.Base.metadata.create_all)
 
     # Seed one default agent so the frontend's hardcoded AGENT_ID=1 resolves to a
@@ -32,6 +52,22 @@ async def lifespan(app: FastAPI):
                 is_verified=True,
             )
             session.add(seed_agent)
+            await session.commit()
+
+        lawyer_result = await session.execute(select(models.User).where(models.User.role == models.RoleEnum.lawyer))
+        if lawyer_result.scalars().first() is None:
+            seed_lawyer = models.User(
+                name="Barrister Tunde Adeleke",
+                email="adeleke.legal@trustestate.ng",
+                phone="2348023456789",
+                role=models.RoleEnum.lawyer,
+                specializations="Title Verification, Due Diligence, Governor's Consent Guidance, Contract Drafting",
+                bio="Over 12 years of specialized property law experience across Lagos and Abuja land registries. Focuses on title verification, deed perfection, and governor's consent processing.",
+                years_of_experience=12,
+                is_verified=True,
+                is_active=True,
+            )
+            session.add(seed_lawyer)
             await session.commit()
 
     yield
@@ -55,8 +91,11 @@ app.add_middleware(
 
 @app.post("/users/", response_model=schemas.UserRead, status_code=status.HTTP_201_CREATED)
 async def create_user(user_in: schemas.UserCreate, db: AsyncSession = Depends(database.get_db)):
-    """Creates a new user (seeker, agent, or admin). No auth yet — see comparison notes."""
-    new_user = models.User(**user_in.model_dump())
+    """Creates a new user (seeker, agent, admin, or lawyer). No auth yet — see comparison notes."""
+    data = user_in.model_dump()
+    if isinstance(data.get("specializations"), list):
+        data["specializations"] = ", ".join(data["specializations"])
+    new_user = models.User(**data)
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
@@ -67,7 +106,7 @@ async def list_users(
     role: Optional[schemas.RoleEnum] = Query(None),
     db: AsyncSession = Depends(database.get_db),
 ):
-    """Admin route: lists users, optionally filtered by role (e.g. agents)."""
+    """Admin route: lists users, optionally filtered by role (e.g. agents, lawyers)."""
     query = select(models.User)
     if role:
         query = query.where(models.User.role == role)
@@ -90,13 +129,15 @@ async def update_user(
     user_in: schemas.UserUpdate,
     db: AsyncSession = Depends(database.get_db),
 ):
-    """Admin route: verify or suspend/reactivate a user (e.g. an agent)."""
+    """Admin route: verify or suspend/reactivate a user (e.g. an agent or lawyer)."""
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
     update_data = user_in.model_dump(exclude_unset=True)
+    if "specializations" in update_data and isinstance(update_data["specializations"], list):
+        update_data["specializations"] = ", ".join(update_data["specializations"])
     for field, value in update_data.items():
         setattr(db_user, field, value)
     await db.commit()
@@ -326,5 +367,97 @@ async def update_inspection_request(
         select(models.InspectionRequest)
         .where(models.InspectionRequest.id == inspection_id)
         .options(selectinload(models.InspectionRequest.property))
+    )
+    return result.scalar_one()
+
+# --- Legal Services Routes ---
+
+@app.get("/lawyers/", response_model=List[schemas.UserRead])
+async def list_lawyers(
+    specialization: Optional[str] = Query(None, description="Filter by specialization tag"),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Public route: lists active, verified lawyers for legal services discovery."""
+    query = (
+        select(models.User)
+        .where(models.User.role == models.RoleEnum.lawyer)
+        .where(models.User.is_active == True)
+        .where(models.User.is_verified == True)
+    )
+    if specialization:
+        query = query.where(models.User.specializations.ilike(f"%{specialization}%"))
+    query = query.order_by(models.User.created_at.desc())
+    result = await db.execute(query)
+    return result.scalars().all()
+
+@app.post(
+    "/legal-requests/",
+    response_model=schemas.LegalRequestRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_legal_request(
+    request_in: schemas.LegalRequestCreate,
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Public route: submit a legal service inquiry or lead."""
+    # If a specific lawyer is targeted, verify the lawyer exists, is active, and verified
+    if request_in.lawyer_id is not None:
+        res = await db.execute(
+            select(models.User)
+            .where(models.User.id == request_in.lawyer_id)
+            .where(models.User.role == models.RoleEnum.lawyer)
+            .where(models.User.is_active == True)
+            .where(models.User.is_verified == True)
+        )
+        lawyer = res.scalar_one_or_none()
+        if not lawyer:
+            raise HTTPException(status_code=404, detail="Targeted lawyer not found or currently unavailable")
+
+    new_request = models.LegalRequest(**request_in.model_dump())
+    db.add(new_request)
+    await db.commit()
+
+    result = await db.execute(
+        select(models.LegalRequest)
+        .where(models.LegalRequest.id == new_request.id)
+        .options(selectinload(models.LegalRequest.lawyer))
+    )
+    return result.scalar_one()
+
+@app.get("/admin/legal-requests/", response_model=List[schemas.LegalRequestRead])
+async def list_legal_requests(
+    status_filter: Optional[schemas.LegalRequestStatusEnum] = Query(None, alias="status"),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: lists all legal service requests/leads, optionally filtered by status."""
+    query = select(models.LegalRequest)
+    if status_filter:
+        query = query.where(models.LegalRequest.status == status_filter)
+    query = query.order_by(models.LegalRequest.created_at.desc())
+    query = query.options(selectinload(models.LegalRequest.lawyer))
+    result = await db.execute(query)
+    return result.scalars().all()
+
+@app.patch("/admin/legal-requests/{request_id}", response_model=schemas.LegalRequestRead)
+async def update_legal_request(
+    request_id: int,
+    request_in: schemas.LegalRequestUpdate,
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: update status of a legal request (contacted, completed, cancelled)."""
+    result = await db.execute(
+        select(models.LegalRequest).where(models.LegalRequest.id == request_id)
+    )
+    db_request = result.scalar_one_or_none()
+    if not db_request:
+        raise HTTPException(status_code=404, detail="Legal request not found")
+
+    db_request.status = request_in.status
+    await db.commit()
+
+    result = await db.execute(
+        select(models.LegalRequest)
+        .where(models.LegalRequest.id == request_id)
+        .options(selectinload(models.LegalRequest.lawyer))
     )
     return result.scalar_one()

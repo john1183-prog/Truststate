@@ -1,7 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
-from models import RoleEnum, PropertyTypeEnum, PropertyStatusEnum, InspectionStatusEnum
+from models import RoleEnum, PropertyTypeEnum, PropertyStatusEnum, InspectionStatusEnum, LegalRequestStatusEnum
 
 # --- User Schemas ---
 class UserBase(BaseModel):
@@ -9,6 +9,16 @@ class UserBase(BaseModel):
     email: EmailStr
     phone: str
     role: RoleEnum
+    specializations: Optional[List[str]] = None
+    bio: Optional[str] = None
+    years_of_experience: Optional[int] = None
+
+    @field_validator("specializations", mode="before")
+    @classmethod
+    def parse_specializations(cls, v):
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
 
 class UserCreate(UserBase):
     pass
@@ -16,6 +26,9 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     is_verified: Optional[bool] = None
     is_active: Optional[bool] = None
+    specializations: Optional[List[str]] = None
+    bio: Optional[str] = None
+    years_of_experience: Optional[int] = None
 
 class UserRead(UserBase):
     id: int
@@ -111,6 +124,50 @@ class InspectionRequestRead(InspectionRequestBase):
     status: InspectionStatusEnum
     created_at: datetime
     property: PropertySummary
+
+    class Config:
+        from_attributes = True
+
+# --- Legal Services Schemas ---
+class LawyerSummary(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    phone: str
+    specializations: Optional[List[str]] = None
+    bio: Optional[str] = None
+    years_of_experience: Optional[int] = None
+    is_verified: bool
+
+    @field_validator("specializations", mode="before")
+    @classmethod
+    def parse_specializations(cls, v):
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
+
+    class Config:
+        from_attributes = True
+
+class LegalRequestBase(BaseModel):
+    name: str
+    phone: str
+    email: Optional[EmailStr] = None
+    service_type: str
+    message: Optional[str] = None
+    lawyer_id: Optional[int] = None
+
+class LegalRequestCreate(LegalRequestBase):
+    pass
+
+class LegalRequestUpdate(BaseModel):
+    status: LegalRequestStatusEnum
+
+class LegalRequestRead(LegalRequestBase):
+    id: int
+    status: LegalRequestStatusEnum
+    created_at: datetime
+    lawyer: Optional[LawyerSummary] = None
 
     class Config:
         from_attributes = True

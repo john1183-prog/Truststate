@@ -3,6 +3,7 @@ export enum RoleEnum {
   seeker = 'seeker',
   agent = 'agent',
   admin = 'admin',
+  lawyer = 'lawyer',
 }
 
 export enum PropertyTypeEnum {
@@ -25,6 +26,13 @@ export enum InspectionStatusEnum {
   cancelled = 'cancelled',
 }
 
+export enum LegalRequestStatusEnum {
+  pending = 'pending',
+  contacted = 'contacted',
+  completed = 'completed',
+  cancelled = 'cancelled',
+}
+
 // --- User Types ---
 export interface UserRead {
   name: string;
@@ -35,11 +43,17 @@ export interface UserRead {
   is_verified: boolean;
   is_active: boolean;
   created_at: string;
+  specializations?: string[];
+  bio?: string;
+  years_of_experience?: number;
 }
 
 export interface UserUpdate {
   is_verified?: boolean;
   is_active?: boolean;
+  specializations?: string[];
+  bio?: string;
+  years_of_experience?: number;
 }
 
 // --- Property Image Types ---
@@ -135,4 +149,50 @@ export interface InspectionRequestRead {
   status: InspectionStatusEnum;
   created_at: string;
   property: PropertySummary;
+}
+
+// --- Legal Services Types ---
+export const LEGAL_SERVICES = [
+  'Title Verification',
+  'Due Diligence',
+  'Contract Drafting',
+  'Deed Preparation',
+  "Governor's Consent Guidance",
+  'Land Registration',
+  'Dispute Resolution',
+  'General Legal Advice',
+] as const;
+
+export type LegalServiceType = typeof LEGAL_SERVICES[number];
+
+export interface LawyerSummary {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  specializations?: string[];
+  years_of_experience?: number;
+  is_verified: boolean;
+}
+
+export interface LegalRequestCreate {
+  name: string;
+  phone: string;
+  email?: string;
+  service_type: string;
+  message?: string;
+  lawyer_id?: number;
+}
+
+export interface LegalRequestRead {
+  id: number;
+  name: string;
+  phone: string;
+  email?: string;
+  service_type: string;
+  message?: string;
+  lawyer_id?: number;
+  status: LegalRequestStatusEnum;
+  created_at: string;
+  lawyer?: LawyerSummary;
 }

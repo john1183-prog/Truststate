@@ -4,10 +4,11 @@ import api from '../api';
 import { PropertyRead } from '../types';
 import { useSavedProperties } from '../hooks/useSavedProperties';
 import { ScheduleViewModal } from '../components/ScheduleViewModal';
+import { LegalRequestModal } from '../components/LegalRequestModal';
 import { PropertyCard } from '../components/PropertyCard';
 import {
   CheckCircle, MapPin, Bed, Bath, ChevronLeft, ChevronRight,
-  Heart, Phone, Eye, ArrowLeft, Shield, Calendar, CalendarCheck,
+  Heart, Phone, Eye, ArrowLeft, Shield, Calendar, CalendarCheck, Scale,
 } from 'lucide-react';
 
 // ── Design tokens ────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ export const PropertyDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [currentImg, setCurrentImg] = useState(0);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showLegalModal, setShowLegalModal] = useState(false);
   const [similarProperties, setSimilarProperties] = useState<PropertyRead[]>([]);
   const { isSaved, toggleSave } = useSavedProperties();
 
@@ -318,6 +320,15 @@ export const PropertyDetailPage: React.FC = () => {
                 Schedule a View
               </button>
 
+              {/* Request Legal Title Review CTA */}
+              <button
+                onClick={() => setShowLegalModal(true)}
+                className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl font-bold bg-white/10 hover:bg-white/15 text-white border border-white/15 transition-colors text-sm"
+              >
+                <Scale size={18} className="text-[#C9A84C]" />
+                Request Legal Title Review
+              </button>
+
               {/* Save */}
               <button
                 onClick={() => toggleSave(property.id)}
@@ -359,6 +370,14 @@ export const PropertyDetailPage: React.FC = () => {
           propertyId={property.id}
           propertyTitle={property.title}
           onClose={() => setShowScheduleModal(false)}
+        />
+      )}
+
+      {showLegalModal && (
+        <LegalRequestModal
+          propertyTitle={property.title}
+          initialService="Title Verification"
+          onClose={() => setShowLegalModal(false)}
         />
       )}
     </div>

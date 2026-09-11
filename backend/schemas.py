@@ -171,3 +171,19 @@ class LegalRequestRead(LegalRequestBase):
 
     class Config:
         from_attributes = True
+
+# --- Notification Schemas ---
+class NotificationRead(BaseModel):
+    id: int
+    notification_type: str
+    title: str
+    message: str
+    link: Optional[str] = None
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class NotificationUnreadCount(BaseModel):
+    unread_count: int

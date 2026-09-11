@@ -196,3 +196,18 @@ export interface LegalRequestRead {
   created_at: string;
   lawyer?: LawyerSummary;
 }
+
+// --- Notification Types ---
+export interface NotificationRead {
+  id: number;
+  notification_type: string;
+  title: string;
+  message: string;
+  link?: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationUnreadCount {
+  unread_count: number;
+}

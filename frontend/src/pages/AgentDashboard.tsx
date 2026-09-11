@@ -1,7 +1,9 @@
 import React, { useState, useEffect, FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api';
-import { PropertyCreate, PropertyRead, PropertyTypeEnum } from '../types';
-import { Upload, Home, List, AlertCircle, CheckCircle } from 'lucide-react';
+import { PropertyCreate, PropertyRead, PropertyTypeEnum, NotificationRead } from '../types';
+import { Upload, Home, List, AlertCircle, CheckCircle, Bell, Check, ExternalLink } from 'lucide-react';
+import { useNotificationPolling } from '../hooks/useNotificationPolling';
 
 const STATUS_STYLES: Record<string, string> = {
   approved: 'bg-emerald-100 text-emerald-800',
@@ -11,13 +13,24 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export const AgentDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'upload' | 'listings'>('listings');
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'upload' | 'listings' | 'notifications'>('listings');
   const [myListings, setMyListings] = useState<PropertyRead[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Hardcoded agent ID for MVP — no auth yet
   const AGENT_ID = 1;
+
+  const [notifications, setNotifications] = useState<NotificationRead[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [markingReadId, setMarkingReadId] = useState<number | null>(null);
+
+  const { unreadCount, refreshUnreadCount } = useNotificationPolling({
+    userId: AGENT_ID,
+    enabled: true,
+  });
 
   const [formData, setFormData] = useState<PropertyCreate>({
     title: '',
@@ -50,11 +63,59 @@ export const AgentDashboard: React.FC = () => {
     }
   };
 
+  const fetchNotifications = async () => {
+    try {
+      setNotificationsLoading(true);
+      const response = await api.get<NotificationRead[]>('/notifications/', {
+        params: { user_id: AGENT_ID, limit: 20 },
+      });
+      setNotifications(response.data);
+      setNotificationsError(null);
+    } catch (err) {
+      console.error(err);
+      setNotificationsError('Failed to load notifications.');
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'listings') {
       fetchMyListings();
+    } else if (activeTab === 'notifications') {
+      fetchNotifications();
     }
   }, [activeTab]);
+
+  const handleMarkAsRead = async (id: number) => {
+    setMarkingReadId(id);
+    try {
+      await api.patch(`/notifications/${id}/read`, null, {
+        params: { user_id: AGENT_ID },
+      });
+      setNotifications(prev =>
+        prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
+      );
+      refreshUnreadCount();
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    } finally {
+      setMarkingReadId(null);
+    }
+  };
+
+  const handleNotificationNavigate = (link?: string | null) => {
+    if (!link) return;
+    try {
+      if (link === '/agent' || link.startsWith('/agent?')) {
+        setActiveTab('listings');
+      } else {
+        navigate(link);
+      }
+    } catch (err) {
+      console.error('Failed to navigate:', err);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -125,20 +186,42 @@ export const AgentDashboard: React.FC = () => {
           <h2 className="text-lg font-black text-white">Agent Portal</h2>
           <p className="text-xs text-white/40 mt-0.5">Trust Estate</p>
         </div>
-        <nav className="flex md:flex-col p-3 gap-1">
+        <nav className="flex md:flex-col p-3 gap-1 overflow-x-auto md:overflow-visible">
           <button
             onClick={() => setActiveTab('listings')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors ${activeTab === 'listings' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'}`}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${activeTab === 'listings' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'}`}
           >
             <List size={18} />
             My Listings
           </button>
           <button
             onClick={() => setActiveTab('upload')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors ${activeTab === 'upload' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'}`}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${activeTab === 'upload' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'}`}
           >
             <Upload size={18} />
             Upload Property
+          </button>
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
+              activeTab === 'notifications' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
+            }`}
+          >
+            <span className="flex items-center gap-3">
+              <Bell size={18} />
+              Notifications
+            </span>
+            {unreadCount > 0 && (
+              <span
+                className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                  activeTab === 'notifications'
+                    ? 'bg-[#0A0A0A] text-[#C9A84C]'
+                    : 'bg-[#C9A84C] text-black'
+                }`}
+              >
+                {unreadCount}
+              </span>
+            )}
           </button>
         </nav>
       </aside>
@@ -291,6 +374,102 @@ export const AgentDashboard: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'notifications' && (
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-black text-[#0A0A0A]">Notifications</h1>
+                <p className="text-gray-500 text-sm mt-1">
+                  Viewing requests and inspection alerts for your properties.
+                </p>
+              </div>
+              {unreadCount > 0 && (
+                <span className="bg-[#FBF5E6] text-[#b8963e] border border-[#C9A84C]/30 text-xs font-bold px-3 py-1 rounded-full">
+                  {unreadCount} unread
+                </span>
+              )}
+            </div>
+
+            {notificationsLoading ? (
+              <div className="flex justify-center items-center py-16">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#C9A84C]" />
+              </div>
+            ) : notificationsError ? (
+              <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm">{notificationsError}</div>
+            ) : notifications.length === 0 ? (
+              <div className="bg-white p-10 rounded-2xl text-center border border-gray-100 shadow-sm flex flex-col items-center">
+                <Bell size={48} className="text-gray-300 mb-4" />
+                <h3 className="text-lg font-bold text-gray-900 mb-1">No notifications yet</h3>
+                <p className="text-gray-500 text-sm">
+                  You will receive notifications here when seekers request inspections on your listings.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notifications.map((n) => (
+                  <div
+                    key={n.id}
+                    className={`bg-white rounded-2xl border transition-all p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                      !n.is_read
+                        ? 'border-[#C9A84C]/50 shadow-xs ring-1 ring-[#C9A84C]/20'
+                        : 'border-gray-100 opacity-90'
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                          !n.is_read
+                            ? 'bg-[#FBF5E6] text-[#b8963e]'
+                            : 'bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        <Bell size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-bold text-[#0A0A0A] text-base">{n.title}</h3>
+                          {!n.is_read && (
+                            <span className="inline-block w-2 h-2 rounded-full bg-[#C9A84C]" />
+                          )}
+                        </div>
+                        <p className="text-gray-700 text-sm mt-1">{n.message}</p>
+                        <p className="text-xs text-gray-400 mt-2">
+                          {new Date(n.created_at).toLocaleString('en-NG', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      {!n.is_read && (
+                        <button
+                          onClick={() => handleMarkAsRead(n.id)}
+                          disabled={markingReadId === n.id}
+                          className="flex items-center gap-1.5 text-xs font-bold bg-[#0A0A0A] hover:bg-black/80 text-white px-3.5 py-2 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <Check size={14} />
+                          Mark read
+                        </button>
+                      )}
+                      {n.link && (
+                        <button
+                          onClick={() => handleNotificationNavigate(n.link)}
+                          className="flex items-center gap-1.5 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3.5 py-2 rounded-lg transition-colors"
+                        >
+                          <span>View</span>
+                          <ExternalLink size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

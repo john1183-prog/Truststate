@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import {
   PropertyRead, PropertyStatusEnum, UserRead, RoleEnum,
   InspectionRequestRead, InspectionStatusEnum,
-  LegalRequestRead, LegalRequestStatusEnum,
+  LegalRequestRead, LegalRequestStatusEnum, NotificationRead,
 } from '../types';
 import { PropertyFormModal } from '../components/PropertyFormModal';
 import {
   ClipboardList, Users, CheckCircle, XCircle, ShieldCheck,
   Trash2, Home, AlertCircle, Ban, RotateCcw, CalendarCheck, Phone, Plus, Pencil, Scale,
+  Bell, X, ExternalLink,
 } from 'lucide-react';
+import { useNotificationPolling } from '../hooks/useNotificationPolling';
 
 type ListingFilter = 'all' | PropertyStatusEnum;
 
@@ -42,8 +45,113 @@ const FILTER_TABS: { label: string; value: ListingFilter }[] = [
   { label: 'Taken', value: PropertyStatusEnum.taken },
 ];
 
+type AdminTab = 'listings' | 'agents' | 'enquiries' | 'legal_requests';
+
 export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'listings' | 'agents' | 'enquiries' | 'legal_requests'>('listings');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const tabParam = searchParams.get('tab') as AdminTab | null;
+  const initialTab: AdminTab =
+    tabParam && ['listings', 'agents', 'enquiries', 'legal_requests'].includes(tabParam)
+      ? tabParam
+      : 'listings';
+
+  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationRead[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [markingId, setMarkingId] = useState<number | null>(null);
+  const [actioningMarkAll, setActioningMarkAll] = useState(false);
+
+  const { unreadCount, refreshUnreadCount } = useNotificationPolling({
+    isAdmin: true,
+    enabled: true,
+  });
+
+  useEffect(() => {
+    const t = searchParams.get('tab') as AdminTab | null;
+    if (t && ['listings', 'agents', 'enquiries', 'legal_requests'].includes(t)) {
+      setActiveTab(t);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tab: AdminTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
+
+  const fetchAdminNotifications = useCallback(async () => {
+    try {
+      setNotificationsLoading(true);
+      const res = await api.get<NotificationRead[]>('/admin/notifications/', {
+        params: { limit: 20 },
+      });
+      setNotifications(res.data);
+    } catch (err) {
+      console.error('Failed to load admin notifications:', err);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDrawerOpen) {
+      fetchAdminNotifications();
+    }
+  }, [isDrawerOpen, fetchAdminNotifications]);
+
+  const handleSingleMarkAsRead = async (id: number) => {
+    setMarkingId(id);
+    try {
+      await api.patch(`/notifications/${id}/read?role=admin`);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+      );
+      refreshUnreadCount();
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    } finally {
+      setMarkingId(null);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      setActioningMarkAll(true);
+      await api.post('/admin/notifications/mark-all-read');
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      refreshUnreadCount();
+    } catch (err) {
+      console.error('Failed to mark all as read:', err);
+    } finally {
+      setActioningMarkAll(false);
+    }
+  };
+
+  const handleNotificationNavigate = async (notification: NotificationRead) => {
+    if (!notification.is_read) {
+      handleSingleMarkAsRead(notification.id);
+    }
+    if (!notification.link) return;
+    try {
+      setIsDrawerOpen(false);
+      if (notification.link.startsWith('/admin')) {
+        const parsed = new URL(notification.link, window.location.origin);
+        const targetTab = parsed.searchParams.get('tab') as AdminTab | null;
+        if (targetTab && ['listings', 'agents', 'enquiries', 'legal_requests'].includes(targetTab)) {
+          setActiveTab(targetTab);
+          setSearchParams({ tab: targetTab });
+        } else {
+          navigate(notification.link);
+        }
+      } else {
+        navigate(notification.link);
+      }
+    } catch (err) {
+      console.error('Failed to navigate from notification:', err);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F8F6F1] flex flex-col md:flex-row">
@@ -55,7 +163,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
         <nav className="flex md:flex-col p-3 gap-1 overflow-x-auto md:overflow-visible">
           <button
-            onClick={() => setActiveTab('listings')}
+            onClick={() => handleTabChange('listings')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
               activeTab === 'listings' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
             }`}
@@ -64,7 +172,7 @@ export const AdminDashboard: React.FC = () => {
             Listings
           </button>
           <button
-            onClick={() => setActiveTab('agents')}
+            onClick={() => handleTabChange('agents')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
               activeTab === 'agents' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
             }`}
@@ -73,7 +181,7 @@ export const AdminDashboard: React.FC = () => {
             Agents
           </button>
           <button
-            onClick={() => setActiveTab('enquiries')}
+            onClick={() => handleTabChange('enquiries')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
               activeTab === 'enquiries' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
             }`}
@@ -82,7 +190,7 @@ export const AdminDashboard: React.FC = () => {
             Enquiries
           </button>
           <button
-            onClick={() => setActiveTab('legal_requests')}
+            onClick={() => handleTabChange('legal_requests')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-colors shrink-0 ${
               activeTab === 'legal_requests' ? 'bg-[#C9A84C] text-black' : 'text-white/60 hover:bg-white/5'
             }`}
@@ -93,13 +201,153 @@ export const AdminDashboard: React.FC = () => {
         </nav>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 p-5 md:p-8 overflow-x-hidden">
-        {activeTab === 'listings' && <ListingsPanel />}
-        {activeTab === 'agents' && <AgentsPanel />}
-        {activeTab === 'enquiries' && <EnquiriesPanel />}
-        {activeTab === 'legal_requests' && <LegalRequestsPanel />}
-      </main>
+      {/* Main content wrapper with Top Bar */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Header Bar */}
+        <header className="bg-white border-b border-gray-100 px-5 md:px-8 py-3.5 flex items-center justify-between sticky top-0 z-20 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Admin</span>
+            <span className="text-gray-300">/</span>
+            <span className="text-sm font-bold text-[#0A0A0A] capitalize">
+              {activeTab.replace('_', ' ')}
+            </span>
+          </div>
+
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="relative p-2.5 rounded-xl border border-gray-200 hover:border-[#C9A84C] text-gray-700 hover:text-black transition-colors focus:outline-none bg-white shadow-xs"
+            aria-label="Open notifications"
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-[#C9A84C] text-black font-black text-[11px] min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+        </header>
+
+        {/* Main content */}
+        <main className="flex-1 p-5 md:p-8 overflow-x-hidden">
+          {activeTab === 'listings' && <ListingsPanel />}
+          {activeTab === 'agents' && <AgentsPanel />}
+          {activeTab === 'enquiries' && <EnquiriesPanel />}
+          {activeTab === 'legal_requests' && <LegalRequestsPanel />}
+        </main>
+      </div>
+
+      {/* Slide-over Notification Drawer */}
+      {isDrawerOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+            onClick={() => setIsDrawerOpen(false)}
+          />
+          <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+            <div className="w-screen max-w-md bg-white shadow-2xl flex flex-col">
+              {/* Drawer Header */}
+              <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#0A0A0A] text-[#C9A84C] flex items-center justify-center">
+                    <Bell size={16} />
+                  </div>
+                  <div>
+                    <h2 className="font-black text-[#0A0A0A] text-base">Notifications</h2>
+                    <p className="text-xs text-gray-400">
+                      {unreadCount} unread alert{unreadCount !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      disabled={actioningMarkAll}
+                      className="text-xs font-bold text-[#b8963e] hover:text-[#97782c] px-2.5 py-1.5 rounded-lg hover:bg-[#FBF5E6] transition-colors disabled:opacity-50"
+                    >
+                      {actioningMarkAll ? 'Marking...' : 'Mark all read'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {notificationsLoading ? (
+                  <div className="flex justify-center py-16">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#C9A84C]" />
+                  </div>
+                ) : notifications.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <Bell size={36} className="text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-gray-700">No notifications</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      New property listings and legal service inquiries will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`p-3.5 rounded-xl border transition-all ${
+                        !n.is_read
+                          ? 'bg-white border-[#C9A84C]/50 shadow-xs ring-1 ring-[#C9A84C]/20'
+                          : 'bg-gray-50/70 border-gray-100 opacity-80'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              !n.is_read ? 'bg-[#C9A84C]' : 'bg-transparent'
+                            }`}
+                          />
+                          <h4 className="text-sm font-bold text-[#0A0A0A]">{n.title}</h4>
+                        </div>
+                        <span className="text-[11px] text-gray-400 shrink-0">
+                          {new Date(n.created_at).toLocaleDateString('en-NG', {
+                            day: 'numeric',
+                            month: 'short',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1.5 pl-4">{n.message}</p>
+                      <div className="mt-3 pl-4 flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                        {n.link ? (
+                          <button
+                            onClick={() => handleNotificationNavigate(n)}
+                            className="flex items-center gap-1 text-xs font-semibold text-[#b8963e] hover:text-[#97782c] transition-colors"
+                          >
+                            <span>View details</span>
+                            <ExternalLink size={12} />
+                          </button>
+                        ) : (
+                          <span />
+                        )}
+                        {!n.is_read && (
+                          <button
+                            onClick={() => handleSingleMarkAsRead(n.id)}
+                            disabled={markingId === n.id}
+                            className="text-[11px] font-bold text-gray-500 hover:text-black px-2 py-1 rounded-md hover:bg-gray-100 transition-colors disabled:opacity-50"
+                          >
+                            {markingId === n.id ? 'Marking...' : 'Mark read'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

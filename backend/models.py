@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, Enum, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, Enum, ForeignKey, DateTime, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -52,6 +52,7 @@ class User(Base):
 
     properties = relationship("Property", back_populates="agent")
     legal_requests = relationship("LegalRequest", back_populates="lawyer", foreign_keys="LegalRequest.lawyer_id")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
 class Property(Base):
     __tablename__ = "properties"
@@ -114,3 +115,31 @@ class LegalRequest(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     lawyer = relationship("User", back_populates="legal_requests", foreign_keys=[lawyer_id])
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    recipient_role = Column(Enum(RoleEnum), nullable=True)
+    notification_type = Column(String(50), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(String(1000), nullable=False)
+    link = Column(String(255), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    user = relationship("User", back_populates="notifications")
+
+    __table_args__ = (
+        Index("ix_notifications_user_lookup", "user_id", "is_read", "created_at"),
+        Index("ix_notifications_role_lookup", "recipient_role", "is_read", "created_at"),
+    )

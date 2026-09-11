@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import text, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -152,6 +152,16 @@ async def create_property(property_in: schemas.PropertyCreate, db: AsyncSession 
     new_property = models.Property(**property_in.model_dump())
     new_property.status = models.PropertyStatusEnum.pending # Enforce business rule
     db.add(new_property)
+
+    admin_notification = models.Notification(
+        user_id=None,
+        recipient_role=models.RoleEnum.admin,
+        notification_type="property_pending",
+        title="New Property Pending Review",
+        message=f'New listing "{new_property.title}" in {new_property.neighborhood} submitted for review.',
+        link="/admin?tab=listings",
+    )
+    db.add(admin_notification)
     await db.commit()
     
     # Eagerly load images + agent (images will be empty on creation) before returning
@@ -323,6 +333,16 @@ async def create_inspection_request(
 
     new_request = models.InspectionRequest(property_id=property_id, **request_in.model_dump())
     db.add(new_request)
+
+    agent_notification = models.Notification(
+        user_id=db_property.agent_id,
+        recipient_role=None,
+        notification_type="inspection_request",
+        title="New Inspection Request",
+        message=f'A viewing was requested for "{db_property.title}" on {request_in.preferred_date}.',
+        link="/agent",
+    )
+    db.add(agent_notification)
     await db.commit()
 
     result = await db.execute(
@@ -415,6 +435,16 @@ async def create_legal_request(
 
     new_request = models.LegalRequest(**request_in.model_dump())
     db.add(new_request)
+
+    admin_notification = models.Notification(
+        user_id=None,
+        recipient_role=models.RoleEnum.admin,
+        notification_type="legal_request",
+        title="New Legal Service Inquiry",
+        message=f"New legal lead submitted for {request_in.service_type}.",
+        link="/admin?tab=legal_requests",
+    )
+    db.add(admin_notification)
     await db.commit()
 
     result = await db.execute(
@@ -461,3 +491,120 @@ async def update_legal_request(
         .options(selectinload(models.LegalRequest.lawyer))
     )
     return result.scalar_one()
+
+# --- Notifications Routes ---
+
+@app.get("/notifications/unread-count", response_model=schemas.NotificationUnreadCount)
+async def get_agent_unread_count(
+    user_id: int = Query(..., description="Recipient user id (temporary pre-auth selector)"),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Temporary pre-auth endpoint: returns unread notification count for an agent."""
+    result = await db.execute(
+        select(func.count(models.Notification.id))
+        .where(models.Notification.user_id == user_id)
+        .where(models.Notification.is_read == False)
+    )
+    count = result.scalar_one() or 0
+    return schemas.NotificationUnreadCount(unread_count=count)
+
+@app.get("/notifications/", response_model=List[schemas.NotificationRead])
+async def list_agent_notifications(
+    user_id: int = Query(..., description="Recipient user id (temporary pre-auth selector)"),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Temporary pre-auth endpoint: returns recent notifications for an agent, newest first."""
+    query = (
+        select(models.Notification)
+        .where(models.Notification.user_id == user_id)
+        .order_by(models.Notification.created_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return result.scalars().all()
+
+@app.get("/admin/notifications/unread-count", response_model=schemas.NotificationUnreadCount)
+async def get_admin_unread_count(
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: returns unread notification count for admins."""
+    result = await db.execute(
+        select(func.count(models.Notification.id))
+        .where(models.Notification.user_id.is_(None))
+        .where(models.Notification.recipient_role == models.RoleEnum.admin)
+        .where(models.Notification.is_read == False)
+    )
+    count = result.scalar_one() or 0
+    return schemas.NotificationUnreadCount(unread_count=count)
+
+@app.get("/admin/notifications/", response_model=List[schemas.NotificationRead])
+async def list_admin_notifications(
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: returns recent admin notifications, newest first."""
+    query = (
+        select(models.Notification)
+        .where(models.Notification.user_id.is_(None))
+        .where(models.Notification.recipient_role == models.RoleEnum.admin)
+        .order_by(models.Notification.created_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return result.scalars().all()
+
+@app.patch("/notifications/{notification_id}/read", response_model=schemas.NotificationRead)
+async def mark_notification_as_read(
+    notification_id: int,
+    user_id: Optional[int] = Query(None, description="Recipient user id for agent scoping"),
+    role: Optional[schemas.RoleEnum] = Query(None, description="Recipient role for admin scoping"),
+    db: AsyncSession = Depends(database.get_db),
+):
+    """
+    Mark a single notification as read.
+    Enforces recipient scoping:
+    - If user_id is provided, must match notification.user_id
+    - If role == admin, must match notification.recipient_role == admin and notification.user_id IS NULL
+    """
+    query = select(models.Notification).where(models.Notification.id == notification_id)
+    if user_id is not None:
+        query = query.where(models.Notification.user_id == user_id)
+    elif role == models.RoleEnum.admin:
+        query = query.where(
+            models.Notification.user_id.is_(None),
+            models.Notification.recipient_role == models.RoleEnum.admin,
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recipient selector required (user_id or role=admin)",
+        )
+
+    result = await db.execute(query)
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+
+    notification.is_read = True
+    await db.commit()
+    await db.refresh(notification)
+    return notification
+
+@app.post("/admin/notifications/mark-all-read")
+async def mark_all_admin_notifications_as_read(
+    db: AsyncSession = Depends(database.get_db),
+):
+    """Admin route: marks all unread admin notifications as read."""
+    stmt = (
+        update(models.Notification)
+        .where(
+            models.Notification.user_id.is_(None),
+            models.Notification.recipient_role == models.RoleEnum.admin,
+            models.Notification.is_read == False,
+        )
+        .values(is_read=True)
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"message": "All admin notifications marked as read"}

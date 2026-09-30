@@ -1,55 +1,27 @@
-import React, { useState, useEffect, FormEvent } from 'react';
+import React, { useState, FormEvent } from 'react';
 import { X, Home, AlertCircle, CheckCircle } from 'lucide-react';
 import api from '../api';
-import { PropertyRead, PropertyTypeEnum, PropertyCreate, PropertyUpdate, UserRead, RoleEnum } from '../types';
+import { PropertyRead, PropertyTypeEnum, PropertyUpdate } from '../types';
 
 interface PropertyFormModalProps {
-  mode: 'add' | 'edit';
-  property?: PropertyRead; // required for edit mode
+  property: PropertyRead;
   onClose: () => void;
   onSaved: () => void;
 }
 
-const emptyForm = {
-  title: '',
-  description: '',
-  price: 0,
-  property_type: PropertyTypeEnum.rent,
-  bedrooms: 0,
-  bathrooms: 0,
-  neighborhood: '',
-  address: '',
-};
-
-export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({ mode, property, onClose, onSaved }) => {
-  const [form, setForm] = useState(
-    property
-      ? {
-          title: property.title,
-          description: property.description,
-          price: property.price,
-          property_type: property.property_type,
-          bedrooms: property.bedrooms,
-          bathrooms: property.bathrooms,
-          neighborhood: property.neighborhood,
-          address: property.address,
-        }
-      : emptyForm
-  );
-  const [agentId, setAgentId] = useState<number | ''>('');
-  const [agents, setAgents] = useState<UserRead[]>([]);
-  const [imageFile, setImageFile] = useState<File | null>(null);
+export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({ property, onClose, onSaved }) => {
+  const [form, setForm] = useState({
+    title: property.title,
+    description: property.description,
+    price: property.price,
+    property_type: property.property_type,
+    bedrooms: property.bedrooms,
+    bathrooms: property.bathrooms,
+    neighborhood: property.neighborhood,
+    address: property.address,
+  });
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-
-  // Add mode needs an agent to assign the listing to
-  useEffect(() => {
-    if (mode === 'add') {
-      api.get<UserRead[]>('/users/', { params: { role: RoleEnum.agent } })
-        .then((res) => setAgents(res.data))
-        .catch(() => setError('Could not load agent list.'));
-    }
-  }, [mode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -66,26 +38,8 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({ mode, prop
     setError(null);
 
     try {
-      if (mode === 'add') {
-        if (!agentId) {
-          setError('Please select an agent.');
-          setStatus('idle');
-          return;
-        }
-        const payload: PropertyCreate = { ...form, agent_id: Number(agentId) };
-        const res = await api.post<PropertyRead>('/properties/', payload);
-
-        if (imageFile) {
-          const imageForm = new FormData();
-          imageForm.append('file', imageFile);
-          await api.post(`/properties/${res.data.id}/images?is_main=true`, imageForm, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
-        }
-      } else if (property) {
-        const payload: PropertyUpdate = { ...form };
-        await api.patch(`/properties/${property.id}`, payload);
-      }
+      const payload: PropertyUpdate = { ...form };
+      await api.patch(`/properties/${property.id}`, payload);
       onSaved();
       onClose();
     } catch {
@@ -103,9 +57,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({ mode, prop
         <div className="sticky top-0 bg-white p-5 border-b border-gray-100 flex items-center justify-between z-10">
           <div className="flex items-center gap-2">
             <Home size={20} className="text-[#C9A84C]" />
-            <h2 className="font-black text-[#0A0A0A]">
-              {mode === 'add' ? 'Add Property' : 'Edit Property'}
-            </h2>
+            <h2 className="font-black text-[#0A0A0A]">Edit Property</h2>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400">
             <X size={20} />
@@ -121,23 +73,6 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({ mode, prop
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {mode === 'add' && (
-              <div className="md:col-span-2">
-                <label className={labelClass}>Assign to Agent</label>
-                <select
-                  required
-                  value={agentId}
-                  onChange={(e) => setAgentId(e.target.value ? Number(e.target.value) : '')}
-                  className={`${inputClass} bg-white`}
-                >
-                  <option value="">Select an agent...</option>
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             <div className="md:col-span-2">
               <label className={labelClass}>Title</label>
               <input required name="title" value={form.title} onChange={handleChange} className={inputClass} placeholder="e.g. Luxury 4 Bedroom Duplex" />
@@ -181,19 +116,6 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({ mode, prop
               <label className={labelClass}>Full Address</label>
               <input required name="address" value={form.address} onChange={handleChange} className={inputClass} placeholder="e.g. 12 Admiralty Way" />
             </div>
-
-            {mode === 'add' && (
-              <div className="md:col-span-2">
-                <label className={labelClass}>Property Image</label>
-                <input
-                  required
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#FBF5E6] file:text-[#b8963e] hover:file:bg-[#C9A84C]/20"
-                />
-              </div>
-            )}
           </div>
 
           <div className="pt-2 flex justify-end gap-3">
@@ -213,7 +135,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({ mode, prop
               ) : (
                 <>
                   <CheckCircle size={18} />
-                  {mode === 'add' ? 'Create Listing' : 'Save Changes'}
+                  Save Changes
                 </>
               )}
             </button>

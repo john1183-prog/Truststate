@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
-import { NotificationUnreadCount } from '../types';
+import { NotificationUnreadCount, RoleEnum } from '../types';
+import { useAuth } from '../auth/AuthContext';
+import { getAuthGeneration } from '../auth/tokenStore';
 
 interface UseNotificationPollingOptions {
-  userId?: number;
   isAdmin?: boolean;
   enabled?: boolean;
 }
@@ -11,41 +12,74 @@ interface UseNotificationPollingOptions {
 const POLLING_INTERVAL_MS = 45000; // 45 seconds
 
 export function useNotificationPolling({
-  userId,
   isAdmin = false,
   enabled = true,
-}: UseNotificationPollingOptions) {
+}: UseNotificationPollingOptions = {}) {
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const intervalRef = useRef<number | null>(null);
 
+  const userId = user?.id ?? null;
+  const userRole = user?.role ?? null;
+
+  const canPoll =
+    enabled &&
+    !isAuthLoading &&
+    isAuthenticated &&
+    userId !== null &&
+    (!isAdmin || userRole === RoleEnum.admin);
+
   const fetchUnreadCount = useCallback(async () => {
-    if (!enabled) return;
-    if (!isAdmin && userId === undefined) return;
+    if (!canPoll) return;
+
+    const requestGen = getAuthGeneration();
 
     try {
       setLoading(true);
       const url = isAdmin
         ? '/admin/notifications/unread-count'
-        : `/notifications/unread-count?user_id=${userId}`;
+        : '/notifications/unread-count';
       const res = await api.get<NotificationUnreadCount>(url);
+      if (requestGen !== getAuthGeneration()) {
+        return;
+      }
       setUnreadCount(res.data.unread_count);
       setError(null);
     } catch (err) {
+      if (requestGen !== getAuthGeneration()) {
+        return;
+      }
       console.error('Failed to fetch unread notification count:', err);
       setError('Failed to fetch notification count');
     } finally {
-      setLoading(false);
+      if (requestGen === getAuthGeneration()) {
+        setLoading(false);
+      }
     }
-  }, [userId, isAdmin, enabled]);
+  }, [canPoll, isAdmin, userId]);
 
   useEffect(() => {
-    if (!enabled || (!isAdmin && userId === undefined)) {
+    const stopPolling = () => {
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+
+    if (!canPoll) {
+      stopPolling();
       setUnreadCount(0);
+      setError(null);
+      setLoading(false);
       return;
     }
+
+    // Reset state on user/role switch before starting fresh poll
+    setUnreadCount(0);
+    setError(null);
 
     // Initial fetch
     fetchUnreadCount();
@@ -55,13 +89,6 @@ export function useNotificationPolling({
       intervalRef.current = window.setInterval(() => {
         fetchUnreadCount();
       }, POLLING_INTERVAL_MS);
-    };
-
-    const stopPolling = () => {
-      if (intervalRef.current !== null) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
     };
 
     // Start polling initially
@@ -88,7 +115,7 @@ export function useNotificationPolling({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [fetchUnreadCount, userId, isAdmin, enabled]);
+  }, [fetchUnreadCount, canPoll, userId, isAdmin]);
 
   return {
     unreadCount,

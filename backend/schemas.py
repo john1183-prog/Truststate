@@ -23,6 +23,13 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     pass
 
+class UserRegister(UserBase):
+    password: str = Field(min_length=8, max_length=128)
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
 class UserUpdate(BaseModel):
     is_verified: Optional[bool] = None
     is_active: Optional[bool] = None
@@ -38,6 +45,15 @@ class UserRead(UserBase):
 
     class Config:
         from_attributes = True
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserRead
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 # --- Property Image Schemas ---
 class PropertyImageBase(BaseModel):
@@ -66,9 +82,9 @@ class PropertyBase(BaseModel):
     address: str
 
 class PropertyCreate(PropertyBase):
-    agent_id: int
+    pass
 
-class PropertyUpdate(BaseModel):
+class PropertyContentUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     price: Optional[int] = None
@@ -77,8 +93,16 @@ class PropertyUpdate(BaseModel):
     bathrooms: Optional[int] = None
     neighborhood: Optional[str] = None
     address: Optional[str] = None
+
+class PropertyAgentUpdate(PropertyContentUpdate):
+    pass
+
+class PropertyUpdate(PropertyContentUpdate):
     status: Optional[PropertyStatusEnum] = None
     is_verified: Optional[bool] = None
+
+class PropertyAdminUpdate(PropertyUpdate):
+    pass
 
 class PropertyRead(PropertyBase):
     id: int

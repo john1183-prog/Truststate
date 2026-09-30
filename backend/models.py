@@ -50,9 +50,14 @@ class User(Base):
     bio = Column(String, nullable=True)
     years_of_experience = Column(Integer, nullable=True)
 
+    # Authentication fields
+    password_hash = Column(String, nullable=True)
+    token_version = Column(Integer, default=1, nullable=False)
+
     properties = relationship("Property", back_populates="agent")
     legal_requests = relationship("LegalRequest", back_populates="lawyer", foreign_keys="LegalRequest.lawyer_id")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    auth_sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
 
 class Property(Base):
     __tablename__ = "properties"
@@ -143,3 +148,29 @@ class Notification(Base):
         Index("ix_notifications_user_lookup", "user_id", "is_read", "created_at"),
         Index("ix_notifications_role_lookup", "recipient_role", "is_read", "created_at"),
     )
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed = Column(Boolean, default=False, nullable=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="auth_sessions")
+
+    __table_args__ = (
+        Index("ix_auth_sessions_user_id", "user_id"),
+        Index("ix_auth_sessions_expires_at", "expires_at"),
+    )
+
+class AuthRateLimit(Base):
+    __tablename__ = "auth_rate_limits"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(255), nullable=False, unique=True)
+    attempts = Column(Integer, default=1, nullable=False)
+    window_start = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

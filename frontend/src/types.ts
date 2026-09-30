@@ -33,7 +33,7 @@ export enum LegalRequestStatusEnum {
   cancelled = 'cancelled',
 }
 
-// --- User Types ---
+// --- Authentication & User Types ---
 export interface UserRead {
   name: string;
   email: string;
@@ -46,6 +46,35 @@ export interface UserRead {
   specializations?: string[];
   bio?: string;
   years_of_experience?: number;
+}
+
+export type User = UserRead;
+
+export interface UserRegister {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: RoleEnum;
+  specializations?: string[];
+  bio?: string;
+  years_of_experience?: number;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: UserRead;
+}
+
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
 }
 
 export interface UserUpdate {
@@ -74,7 +103,6 @@ export interface PropertyCreate {
   bathrooms: number;
   neighborhood: string;
   address: string;
-  agent_id: number;
 }
 
 export interface PropertyRead {

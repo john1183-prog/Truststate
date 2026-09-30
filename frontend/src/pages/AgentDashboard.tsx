@@ -19,16 +19,12 @@ export const AgentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Hardcoded agent ID for MVP — no auth yet
-  const AGENT_ID = 1;
-
   const [notifications, setNotifications] = useState<NotificationRead[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [markingReadId, setMarkingReadId] = useState<number | null>(null);
 
   const { unreadCount, refreshUnreadCount } = useNotificationPolling({
-    userId: AGENT_ID,
     enabled: true,
   });
 
@@ -41,7 +37,6 @@ export const AgentDashboard: React.FC = () => {
     bathrooms: 0,
     neighborhood: '',
     address: '',
-    agent_id: AGENT_ID
   });
 
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -50,11 +45,9 @@ export const AgentDashboard: React.FC = () => {
   const fetchMyListings = async () => {
     try {
       setLoading(true);
-      // For MVP, we'll fetch all admin properties and filter by agent ID.
-      // In a real app, there'd be an /agent/properties route.
-      const response = await api.get<PropertyRead[]>('/admin/properties/');
-      const mine = response.data.filter(p => p.agent_id === AGENT_ID);
-      setMyListings(mine);
+      const response = await api.get<PropertyRead[]>('/agent/properties/');
+      setMyListings(response.data);
+      setError(null);
     } catch (err) {
       console.error(err);
       setError("Failed to load your listings.");
@@ -67,7 +60,7 @@ export const AgentDashboard: React.FC = () => {
     try {
       setNotificationsLoading(true);
       const response = await api.get<NotificationRead[]>('/notifications/', {
-        params: { user_id: AGENT_ID, limit: 20 },
+        params: { limit: 20 },
       });
       setNotifications(response.data);
       setNotificationsError(null);
@@ -90,9 +83,7 @@ export const AgentDashboard: React.FC = () => {
   const handleMarkAsRead = async (id: number) => {
     setMarkingReadId(id);
     try {
-      await api.patch(`/notifications/${id}/read`, null, {
-        params: { user_id: AGENT_ID },
-      });
+      await api.patch(`/notifications/${id}/read`);
       setNotifications(prev =>
         prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
       );
@@ -160,7 +151,6 @@ export const AgentDashboard: React.FC = () => {
         bathrooms: 0,
         neighborhood: '',
         address: '',
-        agent_id: AGENT_ID
       });
       setImageFile(null);
 

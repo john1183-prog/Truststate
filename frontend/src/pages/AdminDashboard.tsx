@@ -9,7 +9,7 @@ import {
 import { PropertyFormModal } from '../components/PropertyFormModal';
 import {
   ClipboardList, Users, CheckCircle, XCircle, ShieldCheck,
-  Trash2, Home, AlertCircle, Ban, RotateCcw, CalendarCheck, Phone, Plus, Pencil, Scale,
+  Trash2, Home, AlertCircle, Ban, RotateCcw, CalendarCheck, Phone, Pencil, Scale,
   Bell, X, ExternalLink,
 } from 'lucide-react';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
@@ -104,7 +104,7 @@ export const AdminDashboard: React.FC = () => {
   const handleSingleMarkAsRead = async (id: number) => {
     setMarkingId(id);
     try {
-      await api.patch(`/notifications/${id}/read?role=admin`);
+      await api.patch(`/notifications/${id}/read`);
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
@@ -360,7 +360,6 @@ const ListingsPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actioningId, setActioningId] = useState<number | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState<PropertyRead | null>(null);
 
   const fetchListings = useCallback(async () => {
@@ -406,18 +405,9 @@ const ListingsPanel: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto">
-      <div className="flex items-start justify-between gap-4 mb-1">
-        <div>
-          <h1 className="text-2xl font-black text-[#0A0A0A]">Listings</h1>
-          <p className="text-gray-500 text-sm mt-1 mb-6">Approve, reject, verify, edit, or remove submitted properties.</p>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 bg-[#C9A84C] hover:bg-[#b8963e] text-black font-bold text-sm px-4 py-2.5 rounded-xl transition-colors shrink-0"
-        >
-          <Plus size={16} />
-          Add Property
-        </button>
+      <div className="mb-1">
+        <h1 className="text-2xl font-black text-[#0A0A0A]">Listings</h1>
+        <p className="text-gray-500 text-sm mt-1 mb-6">Approve, reject, verify, edit, or remove submitted properties.</p>
       </div>
 
       {/* Filter pills */}
@@ -546,17 +536,8 @@ const ListingsPanel: React.FC = () => {
         </div>
       )}
 
-      {showAddModal && (
-        <PropertyFormModal
-          mode="add"
-          onClose={() => setShowAddModal(false)}
-          onSaved={fetchListings}
-        />
-      )}
-
       {editingProperty && (
         <PropertyFormModal
-          mode="edit"
           property={editingProperty}
           onClose={() => setEditingProperty(null)}
           onSaved={fetchListings}

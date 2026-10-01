@@ -64,11 +64,18 @@ You are the primary engineering agent for the Trust Estate repository.
   - AI is strictly internal decision-support / advisory triage for admins (e.g., duplicate image heuristics, completeness scoring).
   - NEVER implement autonomous listing approval. Listing approval MUST remain human-administered.
   - NEVER create a public "AI Verified" badge.
-- **Authentication**:
-  - Authentication is NOT currently implemented.
-  - NEVER treat frontend route protection (e.g., hidden links or client-side checks) as real security.
-  - The current backend has open mutation routes (`/properties/`, `/admin/properties/`, `/users/`). When authentication is designed and implemented, authorization MUST be enforced server-side via FastAPI dependencies.
-  - `AgentDashboard.tsx` currently hardcodes `AGENT_ID = 1`. This must be systematically eliminated when authentication is introduced.
+- **Authentication & Authorization Contract**:
+  - Authentication and authorization are implemented and enforced across backend and frontend.
+  - **Durable Security Invariants**:
+    - **Server-Side Enforcement**: NEVER treat client-side route guards or URL naming as real security. All mutations and non-public queries must enforce authorization server-side via FastAPI dependencies (`Depends(security.get_current_user)`, `Depends(security.require_admin)`, `Depends(security.require_agent)`, `Depends(security.require_verified_lawyer)`).
+    - **Database Authority**: The JWT payload role claim is strictly advisory; the database (`models.User.role`, `is_active`, `token_version`) is authoritative on every request.
+    - **Access Token Isolation**: The access token must live exclusively in JavaScript memory and must never be stored in `localStorage`, `sessionStorage`, `IndexedDB`, cookies, or URL parameters.
+    - **Refresh Security**: Refresh tokens are stored server-side only as SHA-256 hashes, rotated atomically upon consumption, and transmitted exclusively via `HttpOnly`, `Path=/auth` cookies. Consuming an already-consumed token triggers immediate reuse revocation across all active sessions for that user.
+  - **Contract A: Property Ownership & Creation Model**:
+    - **Agents Create Properties**: Only authenticated agents create ordinary properties (`POST /properties/`).
+    - **Server-Derived Ownership**: The backend derives `new_property.agent_id = current_user.id`. Client-specified agent selectors for property creation are forbidden.
+    - **Initial State**: Newly created properties strictly begin in `status = pending` and `is_verified = false`.
+    - **Admin Moderation**: Admins review, verify/reject, edit, and delete properties. Admins do NOT create properties on behalf of agents; the Admin Dashboard contains no "Add Property" workflow.
 - **Buyer-Agent Chat Gate**:
   - **HARD STOP**: Chat implementation is strictly BLOCKED until the product owner explicitly decides between:
     - **Option A**: Real buyer accounts/authentication first.

@@ -50,7 +50,33 @@ Apply to all React, Vite, TypeScript, and Tailwind CSS development in `frontend/
   4. **Error state**: Actionable error message with retry or contact option if network/server fails.
 - Never leave users on an uninformative blank screen.
 
-## 6. Build & Verification Gate
+## 5.1 Foreground Polling & Network Lifecycle
+- For lightweight background polling such as unread/status indicators, poll the smallest summary/count endpoint that provides the required information.
+- Do not periodically fetch full collections when a lightweight endpoint is sufficient.
+- Stop/clear polling when `document.visibilityState === 'hidden'`.
+- Immediately refresh and restart polling when the document becomes visible.
+- Refresh immediately on window `focus`.
+- Always clear the existing interval reference before creating a new interval to prevent duplicate timers.
+- Clean up intervals and all event listeners on unmount.
+
+## 6. Authentication & Network Concurrency Invariants
+- **Token Storage Isolation**:
+  - The access token must exist exclusively in JavaScript runtime closure memory (`frontend/src/auth/tokenStore.ts`).
+  - NEVER store access tokens or credentials in `localStorage`, `sessionStorage`, `IndexedDB`, cookies, or URL fragments.
+  - The frontend must never attempt to read or parse the refresh token; it is managed strictly by the browser via the `HttpOnly` cookie.
+- **Authentication Generation Protection (`authGeneration`)**:
+  - Authentication state transitions that can invalidate in-flight requests (login, logout, password change) must advance the authentication generation (`nextAuthGeneration()`).
+  - Requests bind their creation epoch: `config._authGeneration = getAuthGeneration()`.
+  - Stale responses returning `401` from an earlier generation (e.g. requests that were in-flight when a logout or user-switch occurred) must be rejected immediately without triggering a token refresh or re-authenticating the previous session.
+- **Axios Interceptor Discipline (`frontend/src/api.ts`)**:
+  - **Single-Flight Refresh Mutex**: Concurrent `401` responses within the current generation share the same in-flight refresh promise.
+  - **Redundant Refresh Avoidance**: If a request encounters a `401` but the current access token in memory differs from the token that accompanied the request, the interceptor reuses the newer token directly without initiating another refresh roundtrip.
+  - **Excluded Auth Endpoints**: Requests to `/auth/login`, `/auth/register`, and `/auth/refresh` must never attach Bearer tokens or trigger automated refresh interceptors.
+- **Route Guard Discipline (`frontend/src/auth/ProtectedRoute.tsx`)**:
+  - While initial session restoration is loading (`isLoading === true`), render a loading placeholder (`<AuthLoadingScreen />`). Never make premature redirect decisions or mount protected dashboard routes before session state resolves.
+  - Redirect unauthorized users cleanly to `/unauthorized` or `/login`, sanitizing return locations against external or protocol-relative open redirects.
+
+## 7. Build & Verification Gate
 - After any frontend edit, run `npm run build` from `frontend/`.
 - TypeScript compiler (`tsc`) must pass with 0 errors.
 - For new pages or modal flows, start the Vite dev server and verify visually in the browser.
